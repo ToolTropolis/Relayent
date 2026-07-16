@@ -315,7 +315,35 @@ func sanitizeCapabilities(caps api.BridgeCapabilities) api.BridgeCapabilities {
 			Supported: b.Supported,
 			Ready:     b.Ready,
 			Model:     clampString(b.Model, 64),
+			// Model names come from the same untrusted report as everything else
+			// here and are rendered on the status page, so they get the same
+			// treatment: bounded count, bounded length, control chars stripped.
+			// This allowlist is what stopped the stored XSS — any field added to
+			// BackendInfo must be added HERE too, or it silently never reaches
+			// consumers (which is exactly what happened when models were added).
+			Models:       clampStrings(b.Models, 64, 64),
+			DefaultModel: clampString(b.DefaultModel, 64),
+			ModelsProbed: b.ModelsProbed,
 		})
+	}
+	return out
+}
+
+// clampStrings applies clampString to a list and caps how many entries survive,
+// so a hostile report cannot flood the status page with thousands of entries.
+// Empty results are dropped rather than kept as blanks.
+func clampStrings(in []string, maxLen, maxCount int) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, min(len(in), maxCount))
+	for _, v := range in {
+		if c := clampString(v, maxLen); c != "" {
+			out = append(out, c)
+			if len(out) >= maxCount {
+				break
+			}
+		}
 	}
 	return out
 }

@@ -14,6 +14,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -288,7 +289,9 @@ func RunSetup() error {
 
 	reg := NewRegistry()
 	fmt.Println("  Backends on this machine:")
-	for _, b := range reg.Describe() {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	for _, b := range reg.Describe(ctx) {
 		switch {
 		case b.Ready:
 			fmt.Printf("    ✓ %-8s ready\n", b.Name)
@@ -357,7 +360,9 @@ func RunDoctor() error {
 
 	fmt.Println()
 	fmt.Println("  Backends:")
-	for _, b := range NewRegistry().Describe() {
+	dctx, dcancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer dcancel()
+	for _, b := range NewRegistry().Describe(dctx) {
 		switch {
 		case b.Ready:
 			fmt.Printf("    ✓ %-8s ready\n", b.Name)

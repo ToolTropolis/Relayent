@@ -282,7 +282,7 @@ func (b *bridge) reportCapabilities(ctx context.Context) {
 	caps := api.BridgeCapabilities{
 		Version:  Version,
 		Hostname: host,
-		Backends: b.reg.Describe(),
+		Backends: b.reg.Describe(ctx),
 	}
 	body, err := json.Marshal(caps)
 	if err != nil {

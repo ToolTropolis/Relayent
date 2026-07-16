@@ -11,6 +11,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -65,7 +66,7 @@ type binPresenter interface{ BinPresent() bool }
 // Describe reports every known backend: whether its CLI is installed here, whether
 // the adapter is implemented, and whether it can actually run jobs (Ready).
 // The relay cannot see this machine, so the bridge is the source of truth.
-func (r *Registry) Describe() []api.BackendInfo {
+func (r *Registry) Describe(ctx context.Context) []api.BackendInfo {
 	out := make([]api.BackendInfo, 0, len(r.adapters))
 	for name, a := range r.adapters {
 		ready := a.Available() // implemented adapters gate on the CLI being present
@@ -75,12 +76,21 @@ func (r *Registry) Describe() []api.BackendInfo {
 			supported = false
 			installed = bp.BinPresent()
 		}
-		out = append(out, api.BackendInfo{
+		info := api.BackendInfo{
 			Name:      name,
 			Installed: installed,
 			Supported: supported,
 			Ready:     ready,
-		})
+		}
+		// Only ask a usable backend for its models: probing a missing CLI would
+		// just time out, and a stub has nothing to say.
+		if ready {
+			if ml, ok := a.(adapters.ModelLister); ok {
+				models, def, probed := ml.Models(ctx)
+				info.Models, info.DefaultModel, info.ModelsProbed = models, def, probed
+			}
+		}
+		out = append(out, info)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out

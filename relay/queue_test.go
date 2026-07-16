@@ -90,3 +90,89 @@ func TestClaimNextBlocksUntilEnqueue(t *testing.T) {
 		t.Fatal("ClaimNext did not wake on enqueue")
 	}
 }
+
+// Cancelling a still-queued job must actually prevent the work — that is the
+// only case where cancellation saves anything.
+func TestCancelPendingRemovesItFromTheQueue(t *testing.T) {
+	q := NewQueue(time.Minute, time.Minute)
+	q.Enqueue("k", "j1", api.Job{ID: "j1", Backend: "cursor", Prompt: "x"})
+
+	state, ok := q.Cancel("k", "j1")
+	if !ok || state != "pending" {
+		t.Fatalf("Cancel = (%q, %v), want (\"pending\", true)", state, ok)
+	}
+	// A bridge must never receive it.
+	if _, claimed := q.ClaimNext("k", 50*time.Millisecond); claimed {
+		t.Error("a cancelled job must not be claimable by a bridge")
+	}
+	res, _ := q.Fetch("k", "j1", 0)
+	if res.Status != api.StatusError {
+		t.Errorf("status = %q, want error", res.Status)
+	}
+}
+
+// A claimed job can be marked cancelled, but honestly: the work is already gone.
+func TestCancelClaimedJobReportsRunning(t *testing.T) {
+	q := NewQueue(time.Minute, time.Minute)
+	q.Enqueue("k", "j1", api.Job{ID: "j1", Backend: "cursor", Prompt: "x"})
+	if _, ok := q.ClaimNext("k", time.Second); !ok {
+		t.Fatal("setup: bridge should have claimed the job")
+	}
+	state, ok := q.Cancel("k", "j1")
+	if !ok || state != "running" {
+		t.Fatalf("Cancel = (%q, %v), want (\"running\", true)", state, ok)
+	}
+}
+
+// Cancel must unblock a caller waiting in Fetch, or the whole point is lost.
+func TestCancelUnblocksAWaitingFetch(t *testing.T) {
+	q := NewQueue(time.Minute, time.Minute)
+	q.Enqueue("k", "j1", api.Job{ID: "j1", Backend: "cursor", Prompt: "x"})
+
+	done := make(chan api.JobResult, 1)
+	go func() { r, _ := q.Fetch("k", "j1", 5*time.Second); done <- r }()
+	time.Sleep(50 * time.Millisecond) // let Fetch block
+	q.Cancel("k", "j1")
+
+	select {
+	case r := <-done:
+		if r.Status != api.StatusError {
+			t.Errorf("status = %q, want error", r.Status)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Cancel did not unblock the waiting Fetch")
+	}
+}
+
+// Cross-tenant safety: one key must never cancel another's job.
+func TestCancelIsScopedToThePairingKey(t *testing.T) {
+	q := NewQueue(time.Minute, time.Minute)
+	q.Enqueue("owner", "j1", api.Job{ID: "j1", Backend: "cursor", Prompt: "x"})
+	if _, ok := q.Cancel("attacker", "j1"); ok {
+		t.Fatal("another pairing key must NOT be able to cancel this job")
+	}
+	res, _ := q.Fetch("owner", "j1", 0)
+	if res.Status != api.StatusPending {
+		t.Errorf("job should be untouched, status = %q", res.Status)
+	}
+	if _, ok := q.Cancel("owner", "nonexistent"); ok {
+		t.Error("cancelling an unknown job should report not-ok")
+	}
+}
+
+// A finished job cannot be cancelled — the caller must not be told otherwise.
+func TestCancelFinishedJobIsANoop(t *testing.T) {
+	q := NewQueue(time.Minute, time.Minute)
+	q.Enqueue("k", "j1", api.Job{ID: "j1", Backend: "cursor", Prompt: "x"})
+	q.ClaimNext("k", time.Second)
+	q.SetResult("k", "j1", api.ResultRequest{OK: true, Text: "finished"})
+
+	state, ok := q.Cancel("k", "j1")
+	if !ok || state != api.StatusDone {
+		t.Fatalf("Cancel = (%q, %v), want (\"done\", true)", state, ok)
+	}
+	res, _ := q.Fetch("k", "j1", 0)
+	if res.Status != api.StatusDone || res.Text != "finished" {
+		t.Errorf("a completed job's result must survive cancel: %+v", res)
+	}
+}

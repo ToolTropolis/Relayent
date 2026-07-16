@@ -79,6 +79,18 @@ type BackendInfo struct {
 	Supported bool   `json:"supported"` // is the adapter implemented (not a stub)?
 	Ready     bool   `json:"ready"`     // can this backend actually run jobs now?
 	Model     string `json:"model,omitempty"`
+
+	// Models lists identifiers accepted as EnqueueRequest.Model, so a consumer
+	// can discover valid values rather than guess and fail at job time. Empty
+	// when the backend cannot report them — that does not mean models are
+	// unsupported, only undiscoverable; pass a name you know and it will work.
+	Models []string `json:"models,omitempty"`
+	// DefaultModel is what runs when Model is empty, when the backend reports one.
+	DefaultModel string `json:"default_model,omitempty"`
+	// ModelsProbed distinguishes a list obtained FROM the CLI (true — accurate
+	// for this install) from a static declaration (false — a hint that may drift
+	// with CLI releases). Treat a declared list as advisory, not exhaustive.
+	ModelsProbed bool `json:"models_probed,omitempty"`
 }
 
 // BridgeCapabilities is what a bridge reports about itself. The bridge sends this
@@ -126,4 +138,19 @@ type StatusResponse struct {
 // ErrorResponse is the uniform error envelope for 4xx/5xx responses.
 type ErrorResponse struct {
 	Error string `json:"error"`
+}
+
+// CancelResponse is returned by DELETE /v1/jobs/{id}.
+//
+// Cancelled reports whether anything was actually stopped, and WasStatus says
+// what the job was doing when the request arrived — the two together are what
+// let a caller tell "we saved the work" from "we were too late". A job already
+// claimed by a bridge cannot have its CLI killed (the relay cannot reach an
+// outbound-only bridge), so Cancelled=true with WasStatus="running" means the
+// caller stops waiting but the quota is already spent.
+type CancelResponse struct {
+	ID        string `json:"id"`
+	Cancelled bool   `json:"cancelled"`
+	WasStatus string `json:"was_status"` // pending | running | done | error
+	Detail    string `json:"detail"`
 }

@@ -72,3 +72,11 @@ func (a *CodexAdapter) Run(ctx context.Context, req Request) (Result, error) {
 
 	return finalize(stdout.String(), req.JSONSchema != nil), nil
 }
+
+// Models reports nothing: `codex --model` documents no aliases and the CLI has
+// no enumerate command, so any list here would be invention. An empty list with
+// probed=false is the honest answer — the model field still works, callers just
+// have to know the name they want.
+func (a *CodexAdapter) Models(ctx context.Context) ([]string, string, bool) {
+	return nil, "", false
+}

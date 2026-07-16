@@ -19,7 +19,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
 
 // CursorAdapter shells out to the `cursor-agent` CLI.
@@ -116,4 +119,59 @@ func (a *CursorAdapter) run(ctx context.Context, req Request, retry bool) (Resul
 		return a.run(ctx, retryReq, true)
 	}
 	return res, nil
+}
+
+// modelCache memoises the --list-models probe. The capabilities report runs
+// every 60s and shelling out that often is pure waste; the model list changes
+// about as often as the CLI is upgraded.
+type modelCache struct {
+	mu      sync.Mutex
+	models  []string
+	def     string
+	fetched time.Time
+}
+
+var cursorModels modelCache
+
+// modelLineRE matches a line of `cursor-agent --list-models` output, which looks
+// like "gpt-5.3-codex - Codex 5.3" or "auto - Auto (current, default)".
+var modelLineRE = regexp.MustCompile(`^([a-zA-Z0-9._-]+)\s+-\s+(.*)$`)
+
+// Models probes `cursor-agent --list-models`. This is the only backend that can
+// report the truth rather than a hardcoded guess.
+func (a *CursorAdapter) Models(ctx context.Context) ([]string, string, bool) {
+	cursorModels.mu.Lock()
+	defer cursorModels.mu.Unlock()
+	if time.Since(cursorModels.fetched) < 30*time.Minute && cursorModels.models != nil {
+		return cursorModels.models, cursorModels.def, true
+	}
+
+	// Bound the probe: a hung CLI must not stall the capabilities report.
+	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(probeCtx, a.Bin, "--list-models").Output()
+	if err != nil {
+		// Serve a stale list rather than nothing — an old list beats no list.
+		return cursorModels.models, cursorModels.def, cursorModels.models != nil
+	}
+
+	var models []string
+	def := ""
+	for _, line := range strings.Split(string(out), "\n") {
+		m := modelLineRE.FindStringSubmatch(strings.TrimSpace(line))
+		if m == nil {
+			continue
+		}
+		models = append(models, m[1])
+		// The CLI marks its default in the description, e.g. "(current, default)".
+		if def == "" && strings.Contains(strings.ToLower(m[2]), "default") {
+			def = m[1]
+		}
+	}
+	if len(models) == 0 {
+		return cursorModels.models, cursorModels.def, cursorModels.models != nil
+	}
+	cursorModels.models, cursorModels.def, cursorModels.fetched = models, def, time.Now()
+	return models, def, true
 }

@@ -48,3 +48,20 @@ type Adapter interface {
 	// Run executes the request, honoring ctx cancellation/timeout.
 	Run(ctx context.Context, req Request) (Result, error)
 }
+
+// ModelLister is implemented by adapters that can report which models they
+// accept, so a consuming app can discover valid `model` values instead of
+// guessing and finding out at job time.
+//
+// Optional on purpose: the CLIs are wildly inconsistent here. `cursor-agent`
+// has --list-models and can be probed for the truth; `claude` documents a few
+// aliases and no way to enumerate them; `codex` documents nothing. An adapter
+// that cannot answer simply does not implement this, and the API reports an
+// empty list rather than inventing one.
+type ModelLister interface {
+	// Models returns the accepted model identifiers. Probed is true when the
+	// list came from the CLI itself, false when it is a static declaration that
+	// may drift as the CLI changes — consumers should treat a declared list as
+	// a hint, not a contract.
+	Models(ctx context.Context) (models []string, defaultModel string, probed bool)
+}

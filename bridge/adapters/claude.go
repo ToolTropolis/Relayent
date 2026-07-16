@@ -133,3 +133,12 @@ func finalize(text string, wantJSON bool) Result {
 	}
 	return Result{Text: strings.TrimSpace(text)}
 }
+
+// Models reports the aliases `claude --model` accepts. Declared, NOT probed:
+// the CLI has no enumerate command, and it also accepts full model names
+// (e.g. claude-opus-4-8) which cannot be listed exhaustively. Consumers get
+// probed=false so they know this is a hint that may drift with CLI releases,
+// not a contract. Full names still work even though they are not listed.
+func (a *ClaudeAdapter) Models(ctx context.Context) ([]string, string, bool) {
+	return []string{"fable", "opus", "sonnet", "haiku"}, "", false
+}

@@ -185,6 +185,62 @@ func (q *Queue) SetResult(key, id string, res api.ResultRequest) bool {
 	return true
 }
 
+// Cancel abandons a job scoped to key. It returns the job's state at the moment
+// of cancellation so the caller can tell what actually happened:
+//   - "pending"   — it was still queued and has been removed; no bridge will run it
+//   - "running"   — a bridge already claimed it; see the caveat below
+//   - "done"/"error" — it had already finished; nothing to cancel
+//
+// ⚠️ Cancelling a claimed job does NOT stop the CLI already running on the
+// bridge. The bridge owns that process, and the relay has no channel to reach it
+// — the connection is outbound and one-way by design. What cancel does is stop
+// the caller waiting and mark the job so a late result is discarded. The work
+// (and the subscription quota) is already spent. This is a deliberate limit of
+// the dial-out architecture, not an oversight.
+func (q *Queue) Cancel(key, id string) (state string, ok bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if q.jobKey[id] != key {
+		return "", false // unknown job, or another tenant's — same answer either way
+	}
+	e, exists := q.jobs[id]
+	if !exists {
+		return "", false
+	}
+	if e.status == api.StatusDone || e.status == api.StatusError {
+		return e.status, true // already finished; nothing to do
+	}
+
+	// Was it still queued? Removing it from pending is what actually prevents work.
+	prev := "running"
+	if q.removeFromPendingLocked(key, id) {
+		prev = "pending"
+	}
+
+	e.status = api.StatusError
+	e.result = api.ResultRequest{OK: false, Error: "job cancelled by the caller"}
+	select {
+	case <-e.done:
+	default:
+		close(e.done) // unblock anyone in Fetch
+	}
+	return prev, true
+}
+
+// removeFromPendingLocked drops id from key's queue, reporting whether it was
+// there. Caller must hold q.mu.
+func (q *Queue) removeFromPendingLocked(key, id string) bool {
+	ids := q.pending[key]
+	for i, v := range ids {
+		if v == id {
+			q.pending[key] = append(ids[:i:i], ids[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
 // Fetch returns the current result for a job scoped to key. If the job is still
 // pending and wait > 0, it blocks up to wait for a result to arrive.
 func (q *Queue) Fetch(key, id string, wait time.Duration) (api.JobResult, bool) {

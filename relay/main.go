@@ -128,6 +128,7 @@ func main() {
 	mux.HandleFunc("GET /v1/jobs/next", srv.auth(srv.claimNext))
 	mux.HandleFunc("POST /v1/jobs/{id}/result", srv.auth(srv.postResult))
 	mux.HandleFunc("GET /v1/jobs/{id}", srv.auth(srv.fetch))
+	mux.HandleFunc("DELETE /v1/jobs/{id}", srv.auth(srv.cancel))
 	mux.HandleFunc("GET /v1/bridge/online", srv.auth(srv.bridgeOnline))
 	mux.HandleFunc("GET /v1/status", srv.auth(srv.status))
 	mux.HandleFunc("GET /v1/bridge/capabilities", srv.auth(srv.getCapabilities))
@@ -282,6 +283,38 @@ func (s *server) fetch(w http.ResponseWriter, r *http.Request, key string) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// cancel abandons a job. See Queue.Cancel for the important caveat: a job a
+// bridge has already claimed cannot be stopped — the relay has no way to reach
+// an outbound-only bridge mid-job. The response says which happened so the
+// caller is not misled about whether work (and quota) was actually saved.
+func (s *server) cancel(w http.ResponseWriter, r *http.Request, key string) {
+	id := r.PathValue("id")
+	prev, ok := s.q.Cancel(key, id)
+	if !ok {
+		writeErr(w, http.StatusNotFound, "unknown job for this pairing key")
+		return
+	}
+	switch prev {
+	case api.StatusDone, api.StatusError:
+		writeJSON(w, http.StatusOK, api.CancelResponse{
+			ID: id, Cancelled: false, WasStatus: prev,
+			Detail: "job had already finished; nothing to cancel",
+		})
+	case "pending":
+		writeJSON(w, http.StatusOK, api.CancelResponse{
+			ID: id, Cancelled: true, WasStatus: "pending",
+			Detail: "job was still queued and has been removed; no bridge will run it",
+		})
+	default: // running
+		writeJSON(w, http.StatusOK, api.CancelResponse{
+			ID: id, Cancelled: true, WasStatus: "running",
+			Detail: "a bridge had already claimed this job. The CLI it started cannot be " +
+				"stopped by the relay, so the work and any quota it uses are already spent. " +
+				"The job is marked cancelled and any late result will be discarded.",
+		})
+	}
 }
 
 func (s *server) bridgeOnline(w http.ResponseWriter, r *http.Request, key string) {

@@ -189,7 +189,7 @@ func pollState(ctx context.Context, client *http.Client, cfg Config) monitorStat
 
 	// Local backends when the relay has nothing to report (bridge not running).
 	if len(st.backends) == 0 {
-		for _, b := range NewRegistry().Describe() {
+		for _, b := range NewRegistry().Describe(ctx) {
 			st.backends = append(st.backends, struct {
 				Name      string `json:"name"`
 				Installed bool   `json:"installed"`

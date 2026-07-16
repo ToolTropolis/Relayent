@@ -299,3 +299,52 @@ func TestLimiterIsolatesIdentities(t *testing.T) {
 		t.Fatal("identity b must have its own bucket")
 	}
 }
+
+// Regression: sanitizeCapabilities is an allowlist, so any field added to
+// BackendInfo must be added there too or it silently never reaches consumers.
+// Model discovery shipped broken for exactly this reason — the bridge reported
+// models, the relay dropped them, and only a live end-to-end check caught it.
+func TestSanitizeCapabilitiesPreservesModels(t *testing.T) {
+	got := sanitizeCapabilities(api.BridgeCapabilities{
+		Backends: []api.BackendInfo{{
+			Name: "cursor", Ready: true,
+			Models: []string{"auto", "gpt-5.3-codex"}, DefaultModel: "auto", ModelsProbed: true,
+		}},
+	})
+	if len(got.Backends) != 1 {
+		t.Fatalf("got %d backends, want 1", len(got.Backends))
+	}
+	b := got.Backends[0]
+	if len(b.Models) != 2 || b.Models[0] != "auto" {
+		t.Errorf("models = %v, want them preserved", b.Models)
+	}
+	if b.DefaultModel != "auto" || !b.ModelsProbed {
+		t.Errorf("default_model=%q models_probed=%v — both must survive", b.DefaultModel, b.ModelsProbed)
+	}
+}
+
+// Model names are attacker-controllable too — same source as the XSS payload.
+func TestSanitizeCapabilitiesBoundsModels(t *testing.T) {
+	many := make([]string, 200)
+	for i := range many {
+		many[i] = "m"
+	}
+	got := sanitizeCapabilities(api.BridgeCapabilities{
+		Backends: []api.BackendInfo{{
+			Name: "cursor", Ready: true,
+			Models: append([]string{strings.Repeat("x", 500), "ab\x00cd"}, many...),
+		}},
+	})
+	b := got.Backends[0]
+	if len(b.Models) > 64 {
+		t.Errorf("kept %d models, want the count bounded", len(b.Models))
+	}
+	for _, m := range b.Models {
+		if len(m) > 64 {
+			t.Errorf("model %q exceeds the length cap", m)
+		}
+		if strings.ContainsRune(m, 0) {
+			t.Error("control characters must be stripped from model names")
+		}
+	}
+}

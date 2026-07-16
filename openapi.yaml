@@ -147,6 +147,35 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
   /v1/jobs/{id}:
+    delete:
+      summary: Cancel a job
+      description: |
+        Abandons a job. The response says what the job was doing when the request
+        arrived, because that determines whether anything was actually saved:
+
+        - `was_status: pending` — it was still queued and has been removed. No
+          bridge will run it; the work is genuinely prevented.
+        - `was_status: running` — a bridge had already claimed it. **The CLI it
+          started cannot be stopped**: the relay has no channel to an
+          outbound-only bridge. The caller stops waiting and a late result is
+          discarded, but the work and any subscription quota are already spent.
+        - `was_status: done`/`error` — it had already finished; `cancelled` is false.
+
+        Cancelling unblocks anyone waiting in `GET /v1/jobs/{id}?wait=1`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Cancellation outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
     get:
       summary: Consumer fetches a job's status/result
       parameters:
@@ -260,6 +289,23 @@ components:
         supported: { type: boolean, description: "Is the adapter implemented (not a stub)?" }
         ready: { type: boolean, description: "Can this backend actually run jobs now?" }
         model: { type: string, description: "Default model, when the adapter reports one" }
+        models:
+          type: array
+          items: { type: string }
+          description: |
+            Identifiers accepted as `model` on POST /v1/jobs, so a consumer can
+            discover valid values instead of guessing and failing at job time.
+            Empty means the backend cannot report them — NOT that models are
+            unsupported. Pass a name you know and it still works.
+        default_model:
+          type: string
+          description: What runs when `model` is omitted, when the backend reports one.
+        models_probed:
+          type: boolean
+          description: |
+            True when the list came FROM the CLI (accurate for this install);
+            false when it is a static declaration that may drift with CLI
+            releases. A declared list is advisory, not exhaustive.
     BridgeCapabilities:
       type: object
       required: [version, backends]
@@ -278,6 +324,18 @@ components:
           format: date-time
           description: RFC3339 timestamp of the last capabilities report
         capabilities: { $ref: "#/components/schemas/BridgeCapabilities" }
+    CancelResponse:
+      type: object
+      properties:
+        id: { type: string }
+        cancelled:
+          type: boolean
+          description: Whether anything was actually stopped. False when the job had already finished.
+        was_status:
+          type: string
+          enum: [pending, running, done, error]
+          description: What the job was doing when the cancel arrived. `running` means the work was already underway and cannot be recalled.
+        detail: { type: string, description: "Human-readable explanation of the outcome" }
     ErrorResponse:
       type: object
       properties:
