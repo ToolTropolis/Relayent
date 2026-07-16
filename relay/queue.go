@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/navjyotnishant/relayent/internal/api"
+	"github.com/ToolTropolis/Relayent/internal/api"
 )
 
 // jobEntry is the relay's internal record for one job.

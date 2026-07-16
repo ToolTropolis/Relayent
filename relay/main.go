@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/navjyotnishant/relayent/internal/api"
+	"github.com/ToolTropolis/Relayent/internal/api"
 )
 
 const (

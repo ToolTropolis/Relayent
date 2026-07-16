@@ -26,8 +26,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/navjyotnishant/relayent/bridge/adapters"
-	"github.com/navjyotnishant/relayent/internal/api"
+	"github.com/ToolTropolis/Relayent/bridge/adapters"
+	"github.com/ToolTropolis/Relayent/internal/api"
 )
 
 // Version is the bridge build version, overridable at link time.

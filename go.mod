@@ -1,3 +1,3 @@
-module github.com/navjyotnishant/relayent
+module github.com/ToolTropolis/Relayent
 
 go 1.26.5

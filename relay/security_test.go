@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/navjyotnishant/relayent/internal/api"
+	"github.com/ToolTropolis/Relayent/internal/api"
 )
 
 func TestIsLoopbackAddr(t *testing.T) {

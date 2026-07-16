@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/navjyotnishant/relayent/bridge/adapters"
-	"github.com/navjyotnishant/relayent/internal/api"
+	"github.com/ToolTropolis/Relayent/bridge/adapters"
+	"github.com/ToolTropolis/Relayent/internal/api"
 )
 
 // Registry holds the available backend adapters keyed by name.

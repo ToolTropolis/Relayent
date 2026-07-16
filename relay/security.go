@@ -25,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/navjyotnishant/relayent/internal/api"
+	"github.com/ToolTropolis/Relayent/internal/api"
 )
 
 // minKeyLen is the shortest pairing key accepted when the relay is reachable off
