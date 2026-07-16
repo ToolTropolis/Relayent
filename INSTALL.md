@@ -48,6 +48,7 @@ operator is unsure, recommend 2A for trying it out, 2B for real use.
 | "Same machine as my app" / "just trying it" | [2A localhost](#2a-localhost-the-default) | No — run it |
 | "My VPN / Tailscale / private network" | [2B private](#2b-private-network-recommended-for-real-use) | No — run it |
 | "On the internet" / "my web server" / a public domain | [2C public + TLS](#2c-public-relay-with-tls) | **YES — see Q3** |
+| "…but nginx/Apache already uses 80/443 there" | [2D behind an existing proxy](#2d-behind-an-existing-reverse-proxy-nginxapache-already-on-80443) | **YES — see Q3** |
 
 **Q3 — Only if the answer to Q2 was public (2C). Ask all of these:**
 
@@ -59,6 +60,7 @@ operator is unsure, recommend 2A for trying it out, 2B for real use.
 | "Are ports 80 and 443 open to the internet?" | 80 is required for the ACME challenge — HTTPS alone fails | A yes, then confirm in the preflight |
 | "Email for Let's Encrypt expiry notices?" | Optional but recommended | Ask; proceed without if declined |
 | "Existing pairing key, or generate one?" | Some operators bring their own | Default to `keygen` |
+| "Is anything already serving 80/443 on that host?" | Decides 2C (bundled Caddy) vs 2D (behind your proxy). Getting this wrong means a port clash or an outage | Check yourself: `sudo ss -ltnp \| grep -E ':(80\|443)\s'` |
 
 **Q4 — Only if installing a bridge:**
 
@@ -103,7 +105,8 @@ silence it with `RELAYENT_ALLOW_INSECURE`.
 |---|---|
 | Part 1 (bridge), 2A (localhost), Part 3 (verification) | ✅ Executed command-by-command; the outputs below are what they really print |
 | 2B (private network) | ⚠️ Same binaries as 2A, but the network path is untested |
-| 2C (public + TLS) | ✅ Run end-to-end against a real domain: cert issued, relay served over HTTPS behind a reverse proxy, `"tls":true` confirmed, a real job returned structured JSON, and a 90s long-poll survived the proxy |
+| 2C (public + TLS, bundled Caddy) | ⚠️ Compose config validated; the bundled Caddy stack itself has not been run end-to-end |
+| **2D (behind an existing nginx)** | ✅ **This is the path that was proven**: cert issued, relay served over HTTPS behind a real nginx, `"tls":true` confirmed, a real job returned structured JSON, and a 90s long-poll survived the proxy |
 
 **Two things 2C's live run turned up**, worth expecting:
 - **Let's Encrypt's 50-certs-per-168h limit is per _registered domain_ and is shared.** On a
@@ -279,6 +282,56 @@ RELAYENT_PAIRING_KEY=<key> RELAYENT_LISTEN=:8787 ./bin/relayent-relay
 Then pair the bridge against the private address. Note plain `http://` to a non-loopback host
 is refused by the bridge — terminate TLS or keep the relay on loopback.
 
+### Getting a domain and pointing it at your host
+
+Skip this if you already have a domain whose DNS you control. Everything in 2C needs a name
+that resolves to your relay host — a certificate is issued *for a name*, and ACME validates by
+connecting back to it.
+
+**A free subdomain is fine for this.** Two common options:
+
+| Provider | Notes |
+|---|---|
+| [FreeDNS (afraid.org)](https://freedns.afraid.org) | Free subdomains on shared domains. What this guide was tested against. |
+| [DuckDNS](https://www.duckdns.org) | Free `*.duckdns.org` subdomains, simpler UI. |
+
+⚠️ **Shared-domain caveat, and it is not theoretical.** On FreeDNS/DuckDNS your subdomain lives
+under someone else's registered domain (`ignorelist.com`, `duckdns.org`). Let's Encrypt's
+**50-certificates-per-168-hours limit applies to the registered domain**, so *other people's*
+certificates count against your quota. We hit exactly this: `too many certificates (50)
+already issued for "…" in the last 168h0m0s`. It cleared in 5 minutes because the window
+rolls continuously — but if you are unlucky it can be hours. **Never retry in a loop.** For
+anything you depend on, use a domain you own.
+
+**Create the record:**
+
+```
+Type:  A
+Name:  relayent          (i.e. relayent.yourdomain.com)
+Value: <your host's public IP>      # curl -s ifconfig.me   on the host
+TTL:   default / 300
+```
+
+On FreeDNS: *Subdomains → Add*. Enter **just the subdomain part** in the Subdomain field —
+entering the full name creates `relayent.yourdomain.com.yourdomain.com`.
+
+**Then wait, and verify from the right place:**
+
+```bash
+# On YOUR machine — is the record live at all?
+dig +short relayent.yourdomain.com
+
+# On THE SERVER — this is the one that matters. certbot runs there.
+ssh you@your-host 'getent hosts relayent.yourdomain.com'
+```
+
+⚠️ **The server's view is what counts, and it can lag badly.** Cloud hosts use their provider's
+internal resolver, whose cache is independent of Google/Cloudflare and cannot be flushed by
+you. On Oracle Cloud we watched the record go live at all four authoritative nameservers and
+at Google a full **~11 minutes** before the server itself could resolve it. `resolvectl
+flush-caches` did not help. **Do not run certbot until `getent hosts` on the server returns
+your IP** — otherwise validation fails while your site is down, for nothing.
+
 ### 2C: Public relay with TLS
 
 > ⚠️ **This exposes a service that can spend your CLI subscription.**
@@ -403,6 +456,183 @@ time curl -s "https://$DOMAIN/v1/jobs/nonexistent?wait=1" -H "Authorization: Bea
 | `"tls":false` behind HTTPS | `RELAYENT_TRUST_PROXY` not set | The bundled compose sets it; only set it when you run the proxy |
 
 ---
+
+### 2D: Behind an existing reverse proxy (nginx/Apache already on 80/443)
+
+**Use this when something already serves ports 80/443 on the host** — an app, a site, another
+service. 2C's bundled Caddy stack needs those ports, so it does not apply. This is the common
+case on any server that already does something, and it is what this guide was tested against.
+
+**There are no alternate ports.** Let's Encrypt's HTTP-01 challenge only validates on **port
+80** and TLS-ALPN-01 only on **443**. You cannot move the challenge to 8443. So the relay goes
+*behind* the proxy you already have, on a hostname of its own.
+
+```
+                    ┌──────────────────────────────┐
+  Internet ──443──▶ │ your existing nginx          │
+                    │  ├ app.example.com  → app    │   (untouched)
+                    │  └ relayent.example.com ─────┼──▶ relayent-relay:8787
+                    └──────────────────────────────┘        (no host ports)
+```
+
+#### 1. Check what you're working with
+
+```bash
+sudo ss -ltnp | grep -E ':(80|443)\s'      # what holds the ports?
+which certbot || echo "certbot not installed"
+sudo ls /etc/letsencrypt/renewal/           # existing certs — and how they renew
+sudo grep authenticator /etc/letsencrypt/renewal/*.conf
+```
+
+That last one matters: **match the method already in use** rather than introducing a second
+one. `authenticator = standalone` means certs were issued with the proxy stopped;
+`authenticator = webroot` means it stayed up.
+
+#### 2. Get the certificate — BEFORE touching any config
+
+⚠️ **Ordering is not advice, it is load-bearing.** nginx does **not** skip a `server` block
+whose `ssl_certificate` is unreadable — **it refuses to start at all**, taking every other site
+on that host down with it. Deploy the vhost before the cert exists and you have an outage.
+
+```bash
+# 1. The server must resolve the name (see "Getting a domain", above)
+getent hosts relayent.example.com          # must return this host's IP
+
+# 2. standalone needs port 80, so the proxy stops briefly (~10s)
+docker compose stop nginx                  # or: sudo systemctl stop nginx
+sudo certbot certonly --standalone -d relayent.example.com
+docker compose start nginx
+
+# 3. Confirm before going further
+sudo ls /etc/letsencrypt/live/relayent.example.com/fullchain.pem
+```
+
+If your proxy is already set up for **webroot** renewals, prefer that — no downtime:
+```bash
+sudo certbot certonly --webroot -w /var/www/certbot -d relayent.example.com
+```
+
+#### 3. Run the relay with no published ports
+
+The relay must be reachable **only** by the proxy. Publishing it to the host would let callers
+bypass TLS entirely by hitting `http://host:8787`.
+
+```yaml
+# docker-compose.yml — alongside your existing services
+services:
+  relayent-relay:
+    image: relayent-relay:latest
+    container_name: relayent-relay
+    environment:
+      RELAYENT_LISTEN: ':8787'
+      RELAYENT_PAIRING_KEY: ${RELAYENT_PAIRING_KEY:-}
+      RELAYENT_TRUST_PROXY: '1'      # your proxy terminates TLS — see below
+    networks: [your-existing-network]   # MUST match the proxy's network
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    cap_drop: [ALL]
+    restart: always
+```
+
+Build the image on the host (Relayent is a separate repo, so there is no local build context):
+
+```bash
+git clone https://github.com/ToolTropolis/Relayent.git /tmp/relayent
+docker build -f /tmp/relayent/relay/Dockerfile -t relayent-relay:latest /tmp/relayent
+docker run --rm relayent-relay:latest keygen >> /dev/null   # then put the key in .env
+```
+
+⚠️ **Do not use `${RELAYENT_PAIRING_KEY:?err}`.** Compose interpolates every service's
+variables *before* applying profiles or starting anything, so a required-variable guard aborts
+the **entire stack** — including your existing app — on any host where the key is unset. The
+relay already refuses to start without a strong key when network-reachable; that is the control
+you want. (We shipped this bug and caught it in testing.)
+
+#### 4. Add the vhost
+
+```nginx
+server {
+    listen 80;
+    server_name relayent.example.com;
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }   # for webroot renewals
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    server_name relayent.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/relayent.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/relayent.example.com/privkey.pem;
+    # Match the TLS policy of your other vhosts.
+
+    location / {
+        proxy_pass         http://relayent-relay:8787;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;   # REQUIRED — see below
+
+        proxy_hide_header  Content-Security-Policy;     # the relay serves its own, with a nonce
+
+        proxy_read_timeout 120s;   # LOAD-BEARING — see below
+        proxy_send_timeout 120s;
+        proxy_buffering    off;
+    }
+}
+```
+
+**Three settings that are not decoration:**
+
+| Setting | Why |
+|---|---|
+| `proxy_read_timeout 120s` | The `/v1` API **long-polls**: a result fetch blocks up to 90s, a bridge poll ~25s. nginx defaults to **60s**, which severs jobs mid-flight and surfaces as *"the bridge is broken"* rather than a proxy timeout. Verified: a real 90s long-poll returns 200 with this set. |
+| `X-Forwarded-Proto` + `RELAYENT_TRUST_PROXY=1` | How the relay knows it is behind TLS. Without both, `/v1/status` reports `"tls":false` and the status page tells your users their traffic is unencrypted — while it actually is not. |
+| **No `limit_conn`** | If your other vhosts cap connections per IP, do **not** copy that here. A bridge holds one long-poll open continuously and a consumer may hold another; a cap severs them. The relay does its own per-key and per-IP rate limiting. |
+
+#### 5. Test the config before loading it
+
+```bash
+docker compose exec nginx nginx -t     # or: sudo nginx -t
+```
+
+**Only reload if that passes.** Use `reload`, never `restart` — reload keeps existing
+connections and, crucially, will not take the site down on a bad config:
+
+```bash
+docker compose exec nginx nginx -s reload
+```
+
+#### 6. Verify — all must pass
+
+```bash
+DOMAIN=relayent.example.com; KEY=<your key>
+
+curl -s https://$DOMAIN/v1/health                                        # {"status":"ok"}
+curl -s https://$DOMAIN/v1/status -H "Authorization: Bearer $KEY" | grep -o '"tls":[a-z]*'
+#   PASS: "tls":true    FAIL: "tls":false -> X-Forwarded-Proto / TRUST_PROXY not wired
+curl -s -o /dev/null -w '%{http_code}\n' https://$DOMAIN/v1/status      # 401 (no key)
+curl -sI http://$DOMAIN | head -1                                        # 301/308 -> https
+curl -s -o /dev/null -w '%{http_code}\n' https://your-existing-app.example.com   # 200 — unaffected!
+
+# The long-poll — with NO bridge running, this must block ~90s and return 200, not 502/504:
+time curl -s -o /dev/null -w '%{http_code} after %{time_total}s\n' \
+  "https://$DOMAIN/v1/jobs/$(curl -s -XPOST https://$DOMAIN/v1/jobs -H "Authorization: Bearer $KEY" \
+     -d '{"backend":"cursor","prompt":"x"}' | sed -n 's/.*"job_id":"\([^"]*\)".*/\1/p')?wait=1" \
+  -H "Authorization: Bearer $KEY"
+```
+
+#### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| **Everything on the host is down** after a reload | The vhost references a cert that does not exist | Restore the old config, reload, get the cert first |
+| `502 Bad Gateway` | The relay is not on the proxy's docker network, or not running | `docker network inspect <net>`; check `proxy_pass` resolves the container name |
+| `"tls":false` over real HTTPS | `X-Forwarded-Proto` missing, or `RELAYENT_TRUST_PROXY` unset | Set both |
+| `504` after ~60s on a job | `proxy_read_timeout` too low | Raise to 120s |
+| Whole stack refuses to start | `${VAR:?err}` on an unset variable | Use `${VAR:-}` |
+| `too many certificates … in the last 168h` | Shared registered domain (FreeDNS etc.) | Wait for the window. **Never loop.** |
 
 ## Part 3: Verify end-to-end
 
