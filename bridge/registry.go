@@ -2,9 +2,12 @@
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
 // Description: Backend registry for the Relayent bridge. Maps a job's backend name
-//   to its adapter. Adding a backend later is one constructor + one registry entry.
+//
+//	to its adapter. Adding a backend later is one constructor + one registry entry.
+//
 // AI usage: Built with assistance from AI tools for implementation acceleration,
-//   review, and refactoring.
+//
+//	review, and refactoring.
 package main
 
 import (

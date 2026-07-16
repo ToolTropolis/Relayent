@@ -2,11 +2,14 @@
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
 // Description: Relayent bridge — a daemon the user runs on their own machine. It
-//   dials OUT to the relay (no inbound ports), long-polls for jobs, runs the
-//   matching local CLI adapter headless (reusing the CLI's subscription auth),
-//   and posts the result back. Works behind NAT/firewalls.
+//
+//	dials OUT to the relay (no inbound ports), long-polls for jobs, runs the
+//	matching local CLI adapter headless (reusing the CLI's subscription auth),
+//	and posts the result back. Works behind NAT/firewalls.
+//
 // AI usage: Built with assistance from AI tools for implementation acceleration,
-//   review, and refactoring.
+//
+//	review, and refactoring.
 package main
 
 import (
@@ -30,10 +33,73 @@ import (
 // Version is the bridge build version, overridable at link time.
 var Version = "1.0.0"
 
+// bridgeUsage is the bridge's CLI help.
+const bridgeUsage = `relayent-bridge — runs AI jobs on this machine's CLI subscription
+
+USAGE
+  relayent-bridge             Run the bridge (foreground)
+  relayent-bridge setup       Pair this machine with a relay (interactive)
+  relayent-bridge install     Run automatically in the background at login
+  relayent-bridge uninstall   Remove the login service
+  relayent-bridge status      Show service status
+  relayent-bridge doctor      Diagnose configuration and connectivity
+  relayent-bridge help        Show this help
+
+HOW IT WORKS
+  The bridge dials OUT to a relay and pulls jobs. Nothing listens on this
+  machine — no ports are opened and no inbound connection is ever accepted.
+  Jobs run through your already-authenticated CLI, so no credentials are
+  stored or transmitted by Relayent.
+
+CONFIG
+  Written by 'setup' to ~/.relayent/config.env (owner-only). Environment
+  variables override the file:
+    RELAYENT_RELAY_URL     Relay base URL (https:// required off-localhost)
+    RELAYENT_PAIRING_KEY   Your pairing key — a credential; keep it secret
+    RELAYENT_POLL_WAIT     Long-poll seconds per request (default 25)
+    RELAYENT_JOB_TIMEOUT   Max seconds per CLI invocation (default 180)
+    RELAYENT_{CLAUDE,CODEX,CURSOR,GEMINI}_BIN   Override a CLI path
+`
+
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "setup":
+			if err := RunSetup(); err != nil {
+				os.Exit(1)
+			}
+			return
+		case "install":
+			if err := InstallService(); err != nil {
+				fmt.Fprintf(os.Stderr, "\n  ✗ %v\n\n", err)
+				os.Exit(1)
+			}
+			return
+		case "uninstall":
+			if err := UninstallService(); err != nil {
+				fmt.Fprintf(os.Stderr, "\n  ✗ %v\n\n", err)
+				os.Exit(1)
+			}
+			return
+		case "status":
+			if err := ServiceStatus(); err != nil {
+				os.Exit(1)
+			}
+			return
+		case "doctor":
+			if err := RunDoctor(); err != nil {
+				os.Exit(1)
+			}
+			return
+		case "-h", "--help", "help":
+			fmt.Print(bridgeUsage)
+			return
+		}
+	}
+
 	cfg, err := LoadConfig()
 	if err != nil {
-		log.Fatalf("[relayent-bridge] config error: %v", err)
+		log.Fatalf("[relayent-bridge] config error: %v\n\n  Run 'relayent-bridge setup' to pair this machine.", err)
 	}
 	reg := NewRegistry()
 
