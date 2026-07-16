@@ -87,11 +87,19 @@ Verified output before the Cursor work:
   {"name":"gemini","installed":false,"supported":false,"ready":false}]}}
 ```
 
-### ⚠️ Written but **NEVER COMPILED OR RUN** — the Cursor adapter
-`bridge/adapters/cursor.go` is new; the Cursor stub was removed from `bridge/adapters/stubs.go`
-(Gemini stub remains). **This is where the session stopped** — `go build`/`go vet` could not run
-because the Bash permission prompt stream kept closing (`AbortError: Stream closed`), a harness
-issue, not a denial.
+### ✅ Committed — `945765a` "feat: status interface + real Cursor adapter"
+The status interface (above) and the Cursor adapter are now built, verified and committed.
+`go build` / `go vet` / `go test ./...` all pass — the adapter compiled as written, no fixups
+were needed. The Cursor stub is gone from `stubs.go` (Gemini stub remains).
+
+**Cursor verified live:** `{"backend":"cursor"}` + `json_schema` → clean structured JSON in
+~5s, on the subscription with `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` unset. 3/3 clean across two
+different schemas; bridge log confirms `backend=cursor`. `/v1/bridge/capabilities` now reports
+cursor `installed:true, supported:true, ready:true`.
+
+Docs updated in the same commit: README backends table + deploy-anywhere note; `openapi.yaml`
+gained `/v1/status`, `/v1/bridge/capabilities` and the four new schemas — each field diffed
+against the live API responses (only `model` is spec-only, correctly, since it is `omitempty`).
 
 **Cursor research (all confirmed live):**
 - `cursor-agent` is at `~/.local/bin/cursor-agent` and **authenticated**:
@@ -110,29 +118,18 @@ issue, not a denial.
 
 ## Next steps (in order)
 
-1. **Build & vet** — the only blocker:
-   ```bash
-   cd /Users/navjyotnishant/Desktop/github/ToolTropolis/Relayent
-   export PATH="/opt/homebrew/bin:$PATH"     # Go 1.26.5 installed via brew this session
-   go build ./... && go vet ./... && go test ./...
-   ```
-   Expect possible small fixups in `cursor.go` / `stubs.go` (unused imports after the stub removal).
-2. **Run a real Cursor job** end-to-end (see "How to run locally"), enqueue with
-   `{"backend":"cursor",...}` and a `json_schema`; confirm `ready:true` for cursor in
-   `/v1/bridge/capabilities` and structured JSON returns.
-3. **Update docs** — README backends table (cursor ✅ instead of stub) and `openapi.yaml`
-   (add `/v1/status`, `/v1/bridge/capabilities`, and `supported`/`ready` on `BackendInfo`).
-   Also note in README that the relay is deploy-anywhere, not localhost-only.
-4. **Commit** the status interface + Cursor adapter together.
-5. **Kill stray test processes** if any remain: `pkill -f relayent-relay; pkill -f relayent-bridge`
-   (PIDs were tracked in `/tmp/relayent-pids.txt`).
-6. **Then:** EngageHub integration — see below.
+Steps 1–5 of the previous handoff (build/vet, live Cursor job, docs, commit, process cleanup)
+are **done** — see `945765a`. No stray processes remain; `/tmp/relayent-pids.txt` is removed.
+
+1. **Push to a GitHub remote** — the repo is still **local-only, never pushed** (2 commits).
+   Needs your call on the remote name/visibility.
+2. **Linear follow-ups** — add a note to ENG-82 covering the status interface + Cursor adapter.
+3. **Then:** EngageHub integration (ENG-83) — see below.
 
 ### Optional / later
 - Real **Gemini** adapter (CLI not installed on this machine).
 - Redis queue backend for a multi-instance relay.
 - Streaming protocol extension (for AI chat); MVP is request/response only.
-- Publish to a GitHub remote (repo is **local-only** — never pushed; needs your call).
 
 ---
 
@@ -188,11 +185,11 @@ Relayent/
 │       ├── adapter.go           # Adapter interface (Name/Available/Run), Request/Result
 │       ├── claude.go            # ✅ claude -p --output-format json --json-schema (INLINE)
 │       ├── codex.go             # ✅ codex exec -   (prompt on stdin)
-│       ├── cursor.go            # ⚠️ NEW, uncompiled — cursor-agent -p --mode ask --trust
+│       ├── cursor.go            # ✅ cursor-agent -p --output-format json --mode ask --trust
 │       ├── stubs.go             # gemini stub only (Available()=false, BinPresent())
 │       └── util.go              # parseJSON / stripFences
 ├── clients/python/relayent_client.py
-├── openapi.yaml                 # needs /v1/status + capabilities added
+├── openapi.yaml                 # ✅ full /v1 contract incl. /v1/status + capabilities
 ├── Makefile  README.md  LICENSE  .gitignore  go.mod   (module: github.com/navjyotnishant/relayent)
 ```
 
@@ -216,7 +213,11 @@ Relayent/
    outside the IDE workspace. `go build` at the repo root is the source of truth. Opening Relayent
    as its own workspace fixes this (and the permission prompts).
 6. **macOS has no `timeout`** — use `perl -e 'alarm N; exec @ARGV' ...` when capping a command.
-7. Relay `Version`/bridge `Version` are `var`s, overridable at link time via ldflags.
+7. **`openapi.yaml` uses YAML flow mappings** (`{ type: string, description: ... }`). An
+   unquoted `?` or `,` inside a description breaks the parse — quote any description
+   containing them. System python3 has no pyyaml and is externally-managed (PEP 668); use a
+   throwaway venv to validate rather than `pip install --break-system-packages`.
+8. Relay `Version`/bridge `Version` are `var`s, overridable at link time via ldflags.
 
 ---
 
