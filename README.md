@@ -15,6 +15,10 @@ Cursor — instead of a paid API key. No inbound ports, no tunnels: the user's m
  └──────────────────────┘      └───────────────────┘      └────────────────────────┘
 ```
 
+**Setting it up?** → **[INSTALL.md](INSTALL.md)** — a step-by-step guide with exact commands,
+expected output, and troubleshooting. Written to be followed by a person or handed to an AI
+agent.
+
 ## Why
 
 If you (or your users) already pay for Claude Code / Codex / Gemini / Cursor, you shouldn't
@@ -175,6 +179,15 @@ holding it can send prompts to your machine and spend your quota. Treat it like 
 **Read [SECURITY.md](SECURITY.md) before deploying a public relay.** It documents the full
 threat model, including — importantly — [what Relayent does *not*
 protect against](SECURITY.md#what-relayent-does-not-protect-against).
+
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| **[INSTALL.md](INSTALL.md)** | Setup, start to finish: bridge, relay (localhost / private / public+TLS), verification, configuration, rotation, troubleshooting |
+| **[SECURITY.md](SECURITY.md)** | Threat model, the deploy guide, and **what Relayent does not protect against** |
+| **[AGENTS.md](AGENTS.md)** | Conventions and security invariants for AI agents working on this codebase |
+| **[openapi.yaml](openapi.yaml)** | The `/v1` contract — the only integration surface |
 
 ## License
 
