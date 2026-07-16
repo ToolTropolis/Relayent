@@ -3,54 +3,107 @@
 A complete setup guide. Every step states what to run, what you should see, and what to do
 when you see something else.
 
-This document is written to be followed exactly — by a person, or by an AI agent given the
-task "set up Relayent". There is no separate machine version: the commands, expected outputs,
-and failure modes below are the same either way.
+**Handing this to an AI agent?** This is the whole prompt:
+
+> *Set up Relayent. Follow INSTALL.md exactly.*
+
+The document is self-sufficient: [Step 0](#step-0--ask-before-you-touch-anything) makes the
+agent interview you for the server details, credentials and approvals it needs before running
+anything. You don't need to anticipate them — it will ask. Add details up front only if you
+want to skip the questions.
+
+There is no separate machine version of this guide. The commands, expected outputs, and
+failure modes are the same for a person and an agent; what an agent additionally needs is
+[Step 0](#step-0--ask-before-you-touch-anything) and the
+[ground rules](#ground-rules-agents), both below.
 
 ---
 
-## If you are an AI agent
+# STEP 0 — Ask before you touch anything
 
-Read this section first. It is the contract for doing this job.
+**This applies to whoever is doing the setup, including an AI agent given nothing more than
+"set up Relayent, follow INSTALL.md".** Everything this job needs is gathered here, so the
+instruction really can be that short.
 
-**Autonomy.** Run anything in [Part 1](#part-1-install-the-bridge),
-[Part 2A](#2a-localhost-the-default) and [Part 3](#part-3-verify-end-to-end) without asking.
-**Stop and get explicit human approval before:** exposing a relay to the internet
-([2C](#2c-public-relay-with-tls)), piping an unread `curl` into a shell, setting
-`RELAYENT_ALLOW_INSECURE=1`, or opening a firewall port. If your instructions already
-authorise a public deploy, treat that as the approval and say so in your report.
+> **AGENT: STOP. Do not run any command yet.**
+> Work through the interview below and **ask the operator every question you cannot answer
+> from your instructions**. Ask them in one batch, not one at a time. Only then continue.
+> **Never guess.** A guessed domain, an assumed-open port, or an invented email produces a
+> deploy that fails in ways that still look fine in a log. Asking costs one message; guessing
+> costs an afternoon.
 
-**Never print a pairing key** into a transcript, log, issue, PR, or commit. It spends real
-money. `relayent-bridge config list` masks it; the 8-char fingerprint identifies it safely.
-Never commit `.env` or `~/.relayent/config.env`.
+## The interview
 
-**Information you need before starting.** Ask for anything missing rather than inventing it —
-a guessed domain or an assumed open port produces a broken deploy that looks fine in a log:
+**Q1 — What are we installing?** (Both is common: the bridge on a laptop, the relay on a server.)
 
-| Needed for | Ask for |
+- [ ] **Bridge** — on the machine with the AI subscription → [Part 1](#part-1-install-the-bridge)
+- [ ] **Relay** — the job broker → Q2
+- [ ] Both
+
+**Q2 — Where will the relay run, and who reaches it?** This picks the scenario. If the
+operator is unsure, recommend 2A for trying it out, 2B for real use.
+
+| Answer | Scenario | Needs approval? |
+|---|---|---|
+| "Same machine as my app" / "just trying it" | [2A localhost](#2a-localhost-the-default) | No — run it |
+| "My VPN / Tailscale / private network" | [2B private](#2b-private-network-recommended-for-real-use) | No — run it |
+| "On the internet" / "my web server" / a public domain | [2C public + TLS](#2c-public-relay-with-tls) | **YES — see Q3** |
+
+**Q3 — Only if the answer to Q2 was public (2C). Ask all of these:**
+
+| Ask | Why it matters | Do not proceed without it |
+|---|---|---|
+| "Do you authorise exposing this relay publicly?" | It can spend the subscription of every paired bridge | An explicit yes |
+| "What domain?" | Certificates are issued for a name | The real name — never a placeholder |
+| "Does its DNS A/AAAA record already point at this host?" | ACME validates by connecting back | Verify with the preflight; don't take "yes" on faith |
+| "Are ports 80 and 443 open to the internet?" | 80 is required for the ACME challenge — HTTPS alone fails | A yes, then confirm in the preflight |
+| "Email for Let's Encrypt expiry notices?" | Optional but recommended | Ask; proceed without if declined |
+| "Existing pairing key, or generate one?" | Some operators bring their own | Default to `keygen` |
+
+**Q4 — Only if installing a bridge:**
+
+| Ask | Why |
 |---|---|
-| Any relay | Which scenario: localhost (2A), private network (2B), or public+TLS (2C) |
-| 2C only | The domain name, and confirmation its A/AAAA record already points at this host |
-| 2C only | Confirmation that ports 80 and 443 are reachable from the internet |
-| 2C only | An email for Let's Encrypt expiry notices |
-| 2C only | Explicit authorisation to expose the service publicly |
-| Bridge | Which machine runs it, and that an AI CLI there is installed **and signed in** |
+| "Which machine, and is an AI CLI installed **and signed in** there?" | Relayent reuses the CLI's session; logged-out = no jobs |
+| "Which relay URL and pairing key should it pair with?" | If you just deployed the relay, use those |
+| "Should jobs see a project directory, or the default empty sandbox?" | Default is the sandbox — recommend keeping it |
 
-**Report evidence, not conclusions.** "Deployed successfully" is not a result. Paste the actual
-command output for each verification step. If a check fails, report the failure and stop —
-do not proceed to pair a bridge against a relay that failed its checks.
+**Q5 — Anything that needs a decision you cannot make:** the repo is private (does the agent
+have credentials?), a firewall change, `sudo`, or an unread `curl … | sh`. **Ask.**
 
-**Do not work around a refusal.** This software fails closed on purpose. If the relay refuses
-to start, or the bridge refuses an `http://` URL, that is a control doing its job. Fix the
-underlying problem; never reach for `RELAYENT_ALLOW_INSECURE` to silence it.
+## Then say what you are about to do
+
+Before the first command, tell the operator in two lines: the scenario, and anything you will
+need approval for. Then proceed.
+
+---
+
+## Ground rules (agents)
+
+**Autonomy.** Run [Part 1](#part-1-install-the-bridge), [2A](#2a-localhost-the-default),
+[2B](#2b-private-network-recommended-for-real-use) and [Part 3](#part-3-verify-end-to-end)
+freely once Step 0 is answered. **Stop and get explicit approval before:** a public deploy
+([2C](#2c-public-relay-with-tls)), piping an unread `curl` into a shell,
+`RELAYENT_ALLOW_INSECURE=1`, opening a firewall port, or anything needing `sudo`.
+
+**Never print a pairing key** into a transcript, log, issue, PR, or commit — it spends real
+money. Use the 8-char fingerprint. Never commit `.env` or `~/.relayent/config.env`.
+
+**Report evidence, not conclusions.** "Deployed successfully" is not a result. Paste real
+command output. If a check fails, report it and stop — never pair a bridge to a relay that
+failed its checks.
+
+**Do not work around a refusal.** This software fails closed on purpose. A relay refusing to
+start, or a bridge refusing an `http://` URL, is a control working. Fix the cause; never
+silence it with `RELAYENT_ALLOW_INSECURE`.
 
 **What is proven and what is not** — calibrate your confidence:
 
 | Section | Status |
 |---|---|
-| Part 1 (bridge), 2A (localhost), Part 3 (verification) | ✅ Executed command-by-command; output below is what they actually print |
+| Part 1 (bridge), 2A (localhost), Part 3 (verification) | ✅ Executed command-by-command; the outputs below are what they really print |
 | 2B (private network) | ⚠️ Same binaries as 2A, but the network path is untested |
-| **2C (public + TLS)** | ⚠️ **Never run end-to-end.** Certificate issuance needs a real domain and public DNS. Compose config is validated; TLS is not. Expect friction and verify hard |
+| **2C (public + TLS)** | ⚠️ **Never run end-to-end.** Issuance needs a real domain and public DNS. Compose config is validated; TLS is not. Expect friction; verify hard |
 
 ---
 

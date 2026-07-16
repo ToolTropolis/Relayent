@@ -15,9 +15,10 @@ Cursor — instead of a paid API key. No inbound ports, no tunnels: the user's m
  └──────────────────────┘      └───────────────────┘      └────────────────────────┘
 ```
 
-**Setting it up?** → **[INSTALL.md](INSTALL.md)** — a step-by-step guide with exact commands,
-expected output, and troubleshooting. Written to be followed by a person or handed to an AI
-agent.
+**Setting it up?** → **[INSTALL.md](INSTALL.md)** — exact commands, expected output, and
+troubleshooting. Handing it to an AI agent? The whole prompt is *"Set up Relayent. Follow
+INSTALL.md exactly."* — the guide starts by making the agent ask you for the details and
+approvals it needs.
 
 ## Why
 
