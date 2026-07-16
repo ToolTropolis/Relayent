@@ -104,13 +104,60 @@ hold — reported per backend as `installed` / `supported` / `ready` by
 Add a backend: implement `adapters.Adapter` in `bridge/adapters/`, register it in
 `bridge/registry.go`. One file + one line.
 
-## Security notes
+## Install the bridge
 
-- Every request needs a bearer **pairing key**; jobs are scoped to it, so one user's jobs are
-  only ever claimed by their own bridge.
-- The bridge makes **outbound** connections only — nothing listens on the user's machine.
+On the machine whose AI subscription you want to use (needs a CLI installed **and signed in**):
+
+```bash
+./install.sh              # from a checkout — builds from source, pairs interactively
+```
+
+It installs to `~/.local/bin`, never uses `sudo`, and never writes outside `$HOME`. Then:
+
+```bash
+relayent-bridge setup      # pair with a relay (verifies before saving)
+relayent-bridge install    # run at login, in the background
+relayent-bridge doctor     # diagnose anything that isn't working
+```
+
+Jobs run in a dedicated empty folder (`~/.relayent/workspace`) — never your personal files.
+Point `RELAYENT_WORKSPACE` somewhere else only if you deliberately want jobs to see it.
+
+## Deploy the relay
+
+The relay is deploy-anywhere. For a public one, use the bundled stack — Caddy fetches and
+renews a free Let's Encrypt certificate automatically:
+
+```bash
+cd deploy/
+cp .env.example .env       # set RELAYENT_DOMAIN, RELAYENT_PAIRING_KEY, ACME_EMAIL
+docker compose run --rm relay keygen   # generate a strong key
+docker compose up -d
+```
+
+The relay container is never published to the host — only Caddy's `443` is exposed, so TLS
+cannot be bypassed.
+
+## Security
+
+**The pairing key is the only thing between the internet and your CLI subscription.** Anyone
+holding it can send prompts to your machine and spend your quota. Treat it like a password.
+
+- A network-reachable relay **refuses to start** without a key of ≥24 chars — generate one with
+  `relayent-relay keygen`, don't invent one.
+- Rotate without downtime: `relayent-relay rotate` prints the two-phase procedure. Multiple
+  keys are valid at once (`RELAYENT_PAIRING_KEY=new,old`) so bridges migrate before you drop
+  the old one. Bring your own key — `keygen` is only a convenience.
+- The bridge dials **out** only: no ports open on the user's machine, no tunnel, no inbound.
 - No credentials pass through Relayent — the CLI uses its own subscription session.
-- Run the relay behind TLS in production and treat the pairing key as a secret.
+- Keys are never logged; an 8-char fingerprint is shown instead. Failed auth is rate-limited
+  and key comparison is constant-time.
+- The bridge refuses a remote `http://` relay outright — the key would cross the wire in
+  cleartext.
+
+**Read [SECURITY.md](SECURITY.md) before deploying a public relay.** It documents the full
+threat model, including — importantly — [what Relayent does *not*
+protect against](SECURITY.md#what-relayent-does-not-protect-against).
 
 ## License
 
