@@ -117,11 +117,28 @@ It installs to `~/.local/bin`, never uses `sudo`, and never writes outside `$HOM
 ```bash
 relayent-bridge setup      # pair with a relay (verifies before saving)
 relayent-bridge install    # run at login, in the background
+relayent-bridge monitor    # live status + logs in the terminal
 relayent-bridge doctor     # diagnose anything that isn't working
 ```
 
+Configuration works like `aws configure` — a wizard for first-time setup, then individual
+settings without re-running it:
+
+```bash
+relayent-bridge config list                 # every setting, its value, and where it came from
+relayent-bridge config set workspace ~/code # change one value (validated before it's saved)
+relayent-bridge config unset workspace      # revert to the default
+```
+
+Values live in `~/.relayent/config.env` (owner-only, `0600`); environment variables override
+the file, and `config list` shows which source is winning. The pairing key is masked — only
+its fingerprint is shown, which matches the relay's status page.
+
 Jobs run in a dedicated empty folder (`~/.relayent/workspace`) — never your personal files.
-Point `RELAYENT_WORKSPACE` somewhere else only if you deliberately want jobs to see it.
+Point `workspace` somewhere else only if you deliberately want jobs to see it.
+
+Service logs go to `~/.relayent/logs/` and are rotated at 5 MiB, keeping 3 generations —
+neither launchd nor systemd rotates a service's log, so the bridge does it itself.
 
 ## Deploy the relay
 

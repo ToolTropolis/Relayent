@@ -116,20 +116,72 @@ against the live API responses (only `model` is spec-only, correctly, since it i
 
 ---
 
+## Security hardening + installer (done, pushed)
+
+Commits `1b619ad`, `3ee8c5a`, `80013a9`, `4af9b5c`, `21ff148`.
+
+**Relay auth fails closed.** A network-reachable relay **refuses to start** without a
+pairing key of ≥24 chars (`validateKeySetPolicy`); loopback still allows weak/absent keys for
+dev. `RELAYENT_ALLOW_INSECURE=1` is the explicit opt-out. Plus: constant-time comparison,
+per-IP limits on failed auth (8 burst → 429), per-key limits on enqueue, explicit server
+timeouts, security headers, and keys never logged (8-char SHA-256 fingerprint instead).
+
+**Key rotation + BYOK.** `RELAYENT_PAIRING_KEY` takes a comma-separated list — first primary,
+rest retiring — so keys rotate with no downtime. `relayent-relay rotate` prints the two-phase
+procedure; `keygen` emits a 256-bit key. `/v1/status` exposes `key_fingerprint`,
+`key_retiring`, `rotation_active`, `tls`, `network_reachable`.
+
+**Bridge installs like a normal app.** `install.sh` (builds from source, never sudo, never
+writes outside `$HOME`) → `relayent-bridge setup|install|uninstall|status|doctor`. Setup
+verifies the relay before saving to `~/.relayent/config.env` (0600). `install` registers a
+launchd agent (macOS) / systemd --user unit (Linux) — starts at login, restarts on failure,
+never root. The plist pins PATH; without it launchd's minimal PATH hides the CLIs.
+
+**Jobs run in a sandbox, not `$HOME`.** ⚠️ *This was a real bug:* no adapter set `cmd.Dir`,
+and the plist pinned `WorkingDirectory` to `$HOME`, so CLIs inherited it and macOS attributed
+their file access to the bridge → prompts for Desktop/Documents/Downloads. Jobs now run in
+`~/.relayent/workspace` (`Request.WorkDir`, threaded through every adapter).
+`RELAYENT_WORKSPACE` overrides. Home stays *readable* on purpose — the CLIs must load their
+own sessions from `~/.claude`, `~/.codex`, `~/.cursor`.
+
+**Stored XSS fixed (HIGH).** ⚠️ Found by `/security-review`, confirmed exploitable: a payload
+in `BackendInfo.Name` (via `POST /v1/bridge/capabilities`) reached the status page's
+`innerHTML` and read the operator's pairing key out of the DOM. Fixed in three layers —
+`createElement`/`textContent` at the sink, `sanitizeCapabilities()` filtering to the known
+backend set at the source, and a per-request CSP nonce replacing `script-src 'unsafe-inline'`
+(which had *authorised* the injected `onerror=`). Don't remove any one layer assuming another
+holds.
+
+**Docs:** `SECURITY.md` (threat model incl. an explicit "what this does NOT protect against"),
+`deploy/` (docker-compose + Caddy, free automatic Let's Encrypt TLS).
+
+## Decisions made this session (do not re-litigate)
+
+| Decision | Choice | Why |
+|---|---|---|
+| **Desktop GUI** | **No** — CLI + web status page only | A native app means a 2nd language, Apple Developer account (~$99/yr), notarization, and a GUI process that itself trips macOS TCC prompts. All to expose a setting nothing currently reads. Revisit only if jobs become file-aware. |
+| **Workspace config** | Env var (`RELAYENT_WORKSPACE`) | Jobs are read-only Q&A and never read user files; the empty sandbox is the correct default, not a limitation. A picker is only useful once file-aware jobs exist. |
+| **"More directories"** | Not applicable | A subprocess has exactly one cwd. The choice is *which* directory, not a set of them. |
+| **Encryption** | TLS + strong keys, no bespoke crypto | Nothing is stored at rest; the exposure is auth, not cipher strength. Boring standard primitives. |
+| **Repo** | Private, `ToolTropolis/Relayent` | Pushed 2026-07-16. |
+
 ## Next steps (in order)
 
-Steps 1–5 of the previous handoff (build/vet, live Cursor job, docs, commit, process cleanup)
-are **done** — see `945765a`. No stray processes remain; `/tmp/relayent-pids.txt` is removed.
-
-1. **Push to a GitHub remote** — the repo is still **local-only, never pushed** (2 commits).
-   Needs your call on the remote name/visibility.
-2. **Linear follow-ups** — add a note to ENG-82 covering the status interface + Cursor adapter.
-3. **Then:** EngageHub integration (ENG-83) — see below.
+1. **Re-run `/security-review`** before any public exposure. It caught a HIGH XSS that a
+   hand-written threat model had wrongly claimed was covered — worth repeating.
+2. **Verify the TLS deploy on the real server.** ⚠️ **Never tested end-to-end** — Let's Encrypt
+   issuance needs a real domain, public DNS, and reachable ports 80/443. Locally verified only:
+   compose config parses, and it refuses to start without a key.
+3. **Linear follow-ups** — note the status interface, Cursor adapter, and security work on
+   ENG-82.
+4. **Then:** EngageHub integration (ENG-83) — see below.
 
 ### Optional / later
 - Real **Gemini** adapter (CLI not installed on this machine).
+- Signed/notarized releases + published checksums (`install.sh` currently prefers building
+  from source precisely because that is the verifiable path).
 - Redis queue backend for a multi-instance relay.
-- Streaming protocol extension (for AI chat); MVP is request/response only.
+- Streaming protocol extension; MVP is request/response only.
 
 ---
 
@@ -172,22 +224,31 @@ Bridge: `RELAYENT_RELAY_URL` + `RELAYENT_PAIRING_KEY` (both required), `RELAYENT
 Relayent/
 ├── internal/api/types.go        # shared /v1 wire types (EnqueueRequest, Job, BackendInfo, StatusResponse…)
 ├── relay/
-│   ├── main.go                  # HTTP handlers + auth middleware + routes
+│   ├── main.go                  # HTTP handlers + auth middleware + routes + keygen/rotate subcommands
+│   ├── security.go              # 🔒 KeySet (rotation), validateKeyPolicy (fail-closed), constant-time
+│   │                            #    compare, limiter, sanitizeCapabilities, securityHeaders, usage
 │   ├── queue.go                 # per-key in-memory broker: enqueue/claim/result/fetch/caps/TTL
-│   ├── statuspage.go            # self-contained HTML dashboard (const statusHTML)
+│   ├── statuspage.go            # self-contained HTML dashboard + per-request CSP nonce
+│   ├── security_test.go         # key policy, rotation, limiter, XSS sanitiser regressions
 │   ├── queue_test.go            # round-trip, key scoping, presence, long-poll blocking
 │   └── Dockerfile
 ├── bridge/
-│   ├── main.go                  # dial-out poll loop, process(), reportCapabilities, unavailableReason
-│   ├── config.go                # env config + validation
+│   ├── main.go                  # subcommands + dial-out poll loop, process(), reportCapabilities
+│   ├── config.go                # file+env config, validateRelayURL (no remote http://), workspace
+│   ├── setup.go                 # 🆕 setup wizard, doctor, config write (0600), key fingerprint
+│   ├── service.go               # 🆕 install/uninstall/status — launchd plist / systemd unit
 │   ├── registry.go              # backend registry + Describe() (Installed/Supported/Ready)
+│   ├── config_test.go           # relay URL policy, workspace-is-never-$HOME
 │   └── adapters/
-│       ├── adapter.go           # Adapter interface (Name/Available/Run), Request/Result
+│       ├── adapter.go           # Adapter interface, Request{...WorkDir} / Result
 │       ├── claude.go            # ✅ claude -p --output-format json --json-schema (INLINE)
 │       ├── codex.go             # ✅ codex exec -   (prompt on stdin)
 │       ├── cursor.go            # ✅ cursor-agent -p --output-format json --mode ask --trust
 │       ├── stubs.go             # gemini stub only (Available()=false, BinPresent())
 │       └── util.go              # parseJSON / stripFences
+├── deploy/                      # 🆕 docker-compose.yml + Caddyfile + .env.example (auto TLS)
+├── install.sh                   # 🆕 one-command bridge installer
+├── SECURITY.md                  # 🆕 threat model + deploy guide + what it does NOT protect
 ├── clients/python/relayent_client.py
 ├── openapi.yaml                 # ✅ full /v1 contract incl. /v1/status + capabilities
 ├── Makefile  README.md  LICENSE  .gitignore  go.mod   (module: github.com/navjyotnishant/relayent)

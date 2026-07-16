@@ -39,6 +39,8 @@ const bridgeUsage = `relayent-bridge — runs AI jobs on this machine's CLI subs
 USAGE
   relayent-bridge             Run the bridge (foreground)
   relayent-bridge setup       Pair this machine with a relay (interactive)
+  relayent-bridge config      Show or change settings ('config list' to start)
+  relayent-bridge monitor     Live status and logs in the terminal
   relayent-bridge install     Run automatically in the background at login
   relayent-bridge uninstall   Remove the login service
   relayent-bridge status      Show service status
@@ -66,6 +68,18 @@ func main() {
 		switch os.Args[1] {
 		case "setup":
 			if err := RunSetup(); err != nil {
+				os.Exit(1)
+			}
+			return
+		case "config":
+			if err := RunConfig(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "\n  ✗ %v\n\n", err)
+				os.Exit(1)
+			}
+			return
+		case "monitor", "watch":
+			if err := RunMonitor(); err != nil {
+				fmt.Fprintf(os.Stderr, "\n  ✗ %v\n\n", err)
 				os.Exit(1)
 			}
 			return
@@ -108,6 +122,11 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Keep our own log files bounded: neither launchd nor systemd rotates a
+	// service's StandardOutPath/StandardErrorPath, so without this the bridge
+	// would append to one file for as long as it is installed.
+	go logRotationLoop(ctx.Done())
 
 	b := &bridge{cfg: cfg, reg: reg, http: &http.Client{Timeout: cfg.PollWait + 10*time.Second}}
 	// Publish what this machine can do so the relay's status API can surface it,
