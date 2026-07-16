@@ -2,10 +2,13 @@
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
 // Description: Self-contained HTML status page served at the relay root. It asks
-//   for a pairing key in the browser and calls the same /v1 API a consumer would,
-//   so nothing privileged is exposed server-side and the key never leaves the page.
+//
+//	for a pairing key in the browser and calls the same /v1 API a consumer would,
+//	so nothing privileged is exposed server-side and the key never leaves the page.
+//
 // AI usage: Built with assistance from AI tools for implementation acceleration,
-//   review, and refactoring.
+//
+//	review, and refactoring.
 package main
 
 import (

@@ -4,10 +4,13 @@
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
 // Description: Request/response structs shared by the Relayent relay and bridge.
-//   The /v1 HTTP API (see openapi.yaml) is the only integration surface consumers
-//   depend on; these types mirror that contract.
+//
+//	The /v1 HTTP API (see openapi.yaml) is the only integration surface consumers
+//	depend on; these types mirror that contract.
+//
 // AI usage: Built with assistance from AI tools for implementation acceleration,
-//   review, and refactoring.
+//
+//	review, and refactoring.
 package api
 
 // Job statuses.
@@ -103,6 +106,21 @@ type StatusResponse struct {
 	BridgeOnline   bool   `json:"bridge_online"`   // is a bridge polling for the caller's key
 	PendingJobs    int    `json:"pending_jobs"`    // queued jobs for the caller's key
 	RequirePairing bool   `json:"require_pairing"` // is a fixed pairing key enforced
+
+	// KeyFingerprint identifies the caller's key without revealing it, so a user
+	// can confirm which key they are on. Never contains key material.
+	KeyFingerprint string `json:"key_fingerprint,omitempty"`
+	// KeyRetiring is true when the caller authenticated with a key that is being
+	// rotated out — a warning that it will stop working once the operator drops it.
+	KeyRetiring bool `json:"key_retiring,omitempty"`
+	// RotationActive is true while the relay accepts more than one key.
+	RotationActive bool `json:"rotation_active,omitempty"`
+	// TLS reports whether this request arrived over an encrypted channel. Shown on
+	// the status page so a user can see at a glance that their key and prompts are
+	// not crossing the network in plaintext.
+	TLS bool `json:"tls"`
+	// NetworkReachable is true when the relay is not bound to loopback only.
+	NetworkReachable bool `json:"network_reachable"`
 }
 
 // ErrorResponse is the uniform error envelope for 4xx/5xx responses.

@@ -2,9 +2,12 @@
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
 // Description: Unit tests for the relay job queue — round-trip, key scoping,
-//   bridge-presence, and long-poll blocking.
+//
+//	bridge-presence, and long-poll blocking.
+//
 // AI usage: Built with assistance from AI tools for implementation acceleration,
-//   review, and refactoring.
+//
+//	review, and refactoring.
 package main
 
 import (

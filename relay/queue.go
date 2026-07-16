@@ -2,11 +2,14 @@
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
 // Description: In-memory, per-pairing-key job broker for the Relayent relay.
-//   Supports enqueue, long-poll claim by a bridge, result posting, result
-//   fetching, and bridge-presence tracking (drives fail-fast). TTL-expires
-//   orphaned jobs. Redis is the intended drop-in for multi-instance later.
+//
+//	Supports enqueue, long-poll claim by a bridge, result posting, result
+//	fetching, and bridge-presence tracking (drives fail-fast). TTL-expires
+//	orphaned jobs. Redis is the intended drop-in for multi-instance later.
+//
 // AI usage: Built with assistance from AI tools for implementation acceleration,
-//   review, and refactoring.
+//
+//	review, and refactoring.
 package main
 
 import (

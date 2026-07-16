@@ -2,17 +2,21 @@
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
 // Description: Relayent relay — a small stateless job broker exposing the /v1
-//   HTTP API. Consuming apps enqueue AI jobs; a bridge on the user's machine
-//   long-polls, runs the local CLI, and posts results back. Auth is a per-tenant
-//   bearer "pairing key"; all jobs are scoped to that key.
+//
+//	HTTP API. Consuming apps enqueue AI jobs; a bridge on the user's machine
+//	long-polls, runs the local CLI, and posts results back. Auth is a per-tenant
+//	bearer "pairing key"; all jobs are scoped to that key.
+//
 // AI usage: Built with assistance from AI tools for implementation acceleration,
-//   review, and refactoring.
+//
+//	review, and refactoring.
 package main
 
 import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -31,23 +35,91 @@ const (
 	fetchWait       = 90 * time.Second // how long GET /v1/jobs/{id} blocks for a result
 	jobTTL          = 10 * time.Minute
 	onlineWindow    = 40 * time.Second // bridge is "online" if it polled within this
+
+	// Rate limits. Auth failures are limited per client IP to make credential
+	// guessing impractical; the burst tolerates a human retyping a key.
+	authRatePerSec = 0.2 // 1 failed auth per 5s, sustained
+	authBurst      = 8.0
+
+	// Job enqueues are limited per pairing key: a stolen or shared key still
+	// cannot flood a bridge and burn the subscription quota. The bridge's own
+	// long-poll is NOT limited — it reconnects every ~25s by design.
+	jobRatePerSec = 1.0 // 1 job/sec sustained
+	jobBurst      = 30.0
 )
 
 // Version is the relay build version, overridable at link time.
 var Version = "1.0.0"
 
 type server struct {
-	q         *Queue
-	pairKey   string // the single accepted pairing key (from env); "" = allow any non-empty key
-	startedAt time.Time
+	q          *Queue
+	keys       KeySet // accepted pairing keys (primary + retiring); empty = any key
+	startedAt  time.Time
+	authLimit  *limiter // guards credential guessing (keyed by client IP)
+	jobLimit   *limiter // guards job floods / quota burn (keyed by key fingerprint)
+	trustProxy bool     // honour X-Forwarded-For (only behind a trusted reverse proxy)
+
+	networkReachable bool // relay is not bound to loopback only
+}
+
+// requestIsTLS reports whether the request reached the relay over an encrypted
+// channel. Behind a TLS-terminating proxy r.TLS is nil even though the client
+// used HTTPS, so X-Forwarded-Proto is consulted — but only when the proxy is
+// trusted, since any caller can otherwise forge that header and make an
+// unencrypted relay claim it is secure.
+func (s *server) requestIsTLS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if s.trustProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		return true
+	}
+	return false
 }
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "keygen":
+			key, err := GenerateKey()
+			if err != nil {
+				log.Fatalf("[relayent-relay] keygen: %v", err)
+			}
+			fmt.Println(key)
+			return
+		case "rotate":
+			// Rotation is easy to get wrong (drop the old key too early and every
+			// bridge breaks), so print the whole overlap procedure, not just a key.
+			if err := printRotationPlan(os.Getenv("RELAYENT_PAIRING_KEY")); err != nil {
+				log.Fatalf("[relayent-relay] rotate: %v", err)
+			}
+			return
+		case "-h", "--help", "help":
+			fmt.Print(usage)
+			return
+		}
+	}
+
 	addr := envDefault("RELAYENT_LISTEN", ":8787")
+	// Comma-separated: first key is primary, any others are retiring keys kept
+	// valid during a rotation overlap. Bring your own key or use `keygen`.
+	keys := ParseKeySet(os.Getenv("RELAYENT_PAIRING_KEY"))
+
+	// Fail closed: a network-reachable relay without a strong key would let any
+	// caller spend the user's CLI subscription. Refuse rather than warn.
+	if err := validateKeySetPolicy(keys, addr, os.Getenv("RELAYENT_ALLOW_INSECURE") == "1"); err != nil {
+		log.Fatalf("[relayent-relay] %v", err)
+	}
+
 	srv := &server{
-		q:         NewQueue(jobTTL, onlineWindow),
-		pairKey:   os.Getenv("RELAYENT_PAIRING_KEY"),
-		startedAt: time.Now(),
+		q:          NewQueue(jobTTL, onlineWindow),
+		keys:       keys,
+		startedAt:  time.Now(),
+		authLimit:  newLimiter(authRatePerSec, authBurst),
+		jobLimit:   newLimiter(jobRatePerSec, jobBurst),
+		trustProxy: os.Getenv("RELAYENT_TRUST_PROXY") == "1",
+
+		networkReachable: !isLoopbackAddr(addr),
 	}
 
 	mux := http.NewServeMux()
@@ -62,8 +134,42 @@ func main() {
 	mux.HandleFunc("POST /v1/bridge/capabilities", srv.auth(srv.postCapabilities))
 	mux.HandleFunc("GET /", srv.statusPage)
 
-	log.Printf("[relayent-relay] listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	// Explicit timeouts: the default zero-value server has none, leaving it open
+	// to slowloris-style connection exhaustion once it faces the internet.
+	// WriteTimeout must exceed fetchWait, since long-polls legitimately hold a
+	// response open for up to 90s.
+	httpSrv := &http.Server{
+		Addr:              addr,
+		Handler:           securityHeaders(mux),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      fetchWait + 30*time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 16,
+	}
+
+	mode := "network-reachable"
+	if isLoopbackAddr(addr) {
+		mode = "loopback-only"
+	}
+	switch {
+	case keys.Empty():
+		log.Printf("[relayent-relay] listening on %s (%s), NO fixed pairing key — any key accepted",
+			addr, mode)
+	case len(keys.retiring) > 0:
+		// Surfacing fingerprints (never the keys) lets an operator confirm a
+		// rotation is in progress and tell which key a bridge is still using.
+		fps := make([]string, 0, len(keys.retiring))
+		for _, k := range keys.retiring {
+			fps = append(fps, keyFingerprint(k))
+		}
+		log.Printf("[relayent-relay] listening on %s (%s), primary key=%s, ROTATING — %d retiring key(s) still accepted: %s",
+			addr, mode, keyFingerprint(keys.primary), len(keys.retiring), strings.Join(fps, ", "))
+	default:
+		log.Printf("[relayent-relay] listening on %s (%s), pairing key fingerprint=%s",
+			addr, mode, keyFingerprint(keys.primary))
+	}
+	if err := httpSrv.ListenAndServe(); err != nil {
 		log.Fatalf("[relayent-relay] server error: %v", err)
 	}
 }
@@ -78,18 +184,24 @@ func keyFromRequest(r *http.Request) string {
 }
 
 // auth wraps a handler, enforcing a non-empty pairing key. When RELAYENT_PAIRING_KEY
-// is set, the key must match it exactly; otherwise any non-empty key is accepted
-// (each distinct key gets its own isolated job namespace). The key is stashed on
-// the request context via a header the handlers read back.
+// is set, the key must match it exactly (constant-time); otherwise any non-empty key
+// is accepted and gets its own isolated job namespace — a mode only permitted for a
+// loopback-only relay, enforced at startup by validateKeyPolicy.
+//
+// Failed attempts are rate-limited per client IP so the key cannot be guessed, and
+// the reason for a 401 is never disclosed: telling a caller whether the key was
+// missing vs wrong is free information for an attacker.
 func (s *server) auth(next func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		key := keyFromRequest(r)
-		if key == "" {
-			writeErr(w, http.StatusUnauthorized, "missing bearer pairing key")
-			return
-		}
-		if s.pairKey != "" && key != s.pairKey {
-			writeErr(w, http.StatusUnauthorized, "invalid pairing key")
+		ok := key != "" && (s.keys.Empty() || s.keys.Accepts(key))
+		if !ok {
+			ip := clientIP(r, s.trustProxy)
+			if !s.authLimit.allow(ip) {
+				writeErr(w, http.StatusTooManyRequests, "too many failed attempts; slow down")
+				return
+			}
+			writeErr(w, http.StatusUnauthorized, "invalid or missing pairing key")
 			return
 		}
 		next(w, r, key)
@@ -101,6 +213,12 @@ func (s *server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) enqueue(w http.ResponseWriter, r *http.Request, key string) {
+	// Limit per key, not per IP: the cost being protected here is the user's
+	// subscription quota, which is bound to the key regardless of caller origin.
+	if !s.jobLimit.allow(keyFingerprint(key)) {
+		writeErr(w, http.StatusTooManyRequests, "job rate limit exceeded for this pairing key")
+		return
+	}
 	var req api.EnqueueRequest
 	if !decode(w, r, &req) {
 		return
@@ -170,15 +288,22 @@ func (s *server) bridgeOnline(w http.ResponseWriter, r *http.Request, key string
 	writeJSON(w, http.StatusOK, api.BridgeOnlineResponse{Online: s.q.BridgeOnline(key)})
 }
 
-// status reports relay-level health and this pairing key's view of the system.
+// status reports relay-level health and this pairing key's view of the system,
+// including its security posture (TLS, exposure, key rotation) so the status page
+// can tell the user plainly whether their setup is safe.
 func (s *server) status(w http.ResponseWriter, r *http.Request, key string) {
 	writeJSON(w, http.StatusOK, api.StatusResponse{
-		Status:         "ok",
-		Version:        Version,
-		UptimeSeconds:  int64(time.Since(s.startedAt).Seconds()),
-		BridgeOnline:   s.q.BridgeOnline(key),
-		PendingJobs:    s.q.PendingCount(key),
-		RequirePairing: s.pairKey != "",
+		Status:           "ok",
+		Version:          Version,
+		UptimeSeconds:    int64(time.Since(s.startedAt).Seconds()),
+		BridgeOnline:     s.q.BridgeOnline(key),
+		PendingJobs:      s.q.PendingCount(key),
+		RequirePairing:   !s.keys.Empty(),
+		KeyFingerprint:   keyFingerprint(key),
+		KeyRetiring:      s.keys.IsRetiring(key),
+		RotationActive:   len(s.keys.retiring) > 0,
+		TLS:              s.requestIsTLS(r),
+		NetworkReachable: s.networkReachable,
 	})
 }
 
