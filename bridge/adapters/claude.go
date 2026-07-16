@@ -2,10 +2,13 @@
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
 // Description: Claude Code adapter. Runs `claude -p` in headless mode, using the
-//   user's Claude subscription (no API key). Requests JSON output and, when a
-//   schema is supplied, passes it via --json-schema for structured results.
+//
+//	user's Claude subscription (no API key). Requests JSON output and, when a
+//	schema is supplied, passes it via --json-schema for structured results.
+//
 // AI usage: Built with assistance from AI tools for implementation acceleration,
-//   review, and refactoring.
+//
+//	review, and refactoring.
 package adapters
 
 import (
@@ -81,6 +84,8 @@ func (a *ClaudeAdapter) run(ctx context.Context, req Request, retry bool) (Resul
 
 	cmd := exec.CommandContext(ctx, a.Bin, args...)
 	cmd.Stdin = strings.NewReader(prompt)
+	// Run in the bridge's sandbox, never the inherited cwd — see Request.WorkDir.
+	cmd.Dir = req.WorkDir
 	// Do NOT inject any ANTHROPIC_API_KEY — the CLI uses its own subscription auth.
 	cmd.Env = os.Environ()
 

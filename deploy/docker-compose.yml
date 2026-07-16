@@ -1,0 +1,79 @@
+# Relayent relay — production deployment with automatic HTTPS.
+#
+# Primary author: Navjyot Nishant
+# Created on: 2026-07-16
+# Description: Runs the relay behind Caddy, which obtains and renews a free
+#   Let's Encrypt certificate automatically. The relay itself is never exposed
+#   directly — it binds to the internal network only, so the sole public entry
+#   point is Caddy's TLS listener.
+#
+# QUICK START
+#   1. cp .env.example .env
+#   2. Generate a key:   docker compose run --rm relay keygen
+#   3. Put that key and your domain in .env
+#   4. Point your domain's A/AAAA record at this host
+#   5. docker compose up -d
+#
+# Ports 80 and 443 must be reachable for the ACME challenge to succeed.
+
+services:
+  relay:
+    build:
+      context: ..
+      dockerfile: relay/Dockerfile
+    restart: unless-stopped
+    # No `ports:` — the relay is deliberately NOT published to the host. It is
+    # reachable only from Caddy on the internal network, so there is no way to
+    # bypass TLS by hitting the container directly.
+    expose:
+      - "8787"
+    environment:
+      RELAYENT_LISTEN: ":8787"
+      # Comma-separated during a rotation: "newkey,oldkey".
+      RELAYENT_PAIRING_KEY: "${RELAYENT_PAIRING_KEY:?set RELAYENT_PAIRING_KEY in .env — run: docker compose run --rm relay keygen}"
+      # Caddy is a trusted proxy we control, so forwarded client IP/proto are
+      # honoured — without this, rate limiting would see every request as coming
+      # from Caddy and the status page would report tls:false behind real HTTPS.
+      RELAYENT_TRUST_PROXY: "1"
+    networks: [internal]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    healthcheck:
+      # The distroless image has no shell or curl; the relay answers /v1/health
+      # unauthenticated, so Caddy's dependency check covers liveness instead.
+      disable: true
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"     # required for the ACME HTTP challenge + HTTPS redirect
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      RELAYENT_DOMAIN: "${RELAYENT_DOMAIN:?set RELAYENT_DOMAIN in .env, e.g. relay.example.com}"
+      ACME_EMAIL: "${ACME_EMAIL:-}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # certificates — persist this or you WILL hit rate limits
+      - caddy_config:/config
+    depends_on: [relay]
+    networks: [internal]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

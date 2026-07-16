@@ -2,10 +2,13 @@
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
 // Description: Placeholder adapter for the Gemini CLI. It registers the backend
-//   name but reports unavailable until the CLI's non-interactive interface is
-//   wired. Follow the ClaudeAdapter/CursorAdapter shape when implementing.
+//
+//	name but reports unavailable until the CLI's non-interactive interface is
+//	wired. Follow the ClaudeAdapter/CursorAdapter shape when implementing.
+//
 // AI usage: Built with assistance from AI tools for implementation acceleration,
-//   review, and refactoring.
+//
+//	review, and refactoring.
 package adapters
 
 import (
@@ -41,4 +44,3 @@ func (a *GeminiAdapter) BinPresent() bool {
 func (a *GeminiAdapter) Run(ctx context.Context, req Request) (Result, error) {
 	return Result{}, fmt.Errorf("gemini adapter not implemented yet")
 }
-

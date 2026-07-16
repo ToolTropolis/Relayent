@@ -2,11 +2,14 @@
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
 // Description: Cursor adapter. Runs `cursor-agent -p --output-format json` in
-//   headless mode using the user's Cursor subscription (no API key). Uses
-//   --mode ask (read-only Q&A) so generation jobs can never edit files or run
-//   shell commands, and --trust to satisfy the headless workspace-trust prompt.
+//
+//	headless mode using the user's Cursor subscription (no API key). Uses
+//	--mode ask (read-only Q&A) so generation jobs can never edit files or run
+//	shell commands, and --trust to satisfy the headless workspace-trust prompt.
+//
 // AI usage: Built with assistance from AI tools for implementation acceleration,
-//   review, and refactoring.
+//
+//	review, and refactoring.
 package adapters
 
 import (
@@ -78,6 +81,8 @@ func (a *CursorAdapter) run(ctx context.Context, req Request, retry bool) (Resul
 	args = append(args, prompt)
 
 	cmd := exec.CommandContext(ctx, a.Bin, args...)
+	// Run in the bridge's sandbox, never the inherited cwd — see Request.WorkDir.
+	cmd.Dir = req.WorkDir
 	// Do NOT inject CURSOR_API_KEY — the CLI uses its own subscription session.
 	cmd.Env = os.Environ()
 

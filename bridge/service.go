@@ -95,6 +95,18 @@ func installLaunchd(exe string) error {
 	}
 	home, _ := os.UserHomeDir()
 
+	// The service runs from its own empty workspace, NOT from $HOME. A CLI the
+	// bridge launches inherits this directory, and macOS attributes the child's
+	// file access to the parent — running from $HOME is what makes the OS prompt
+	// for Desktop / Documents / Downloads access. Jobs need none of those.
+	workspace, err := DefaultWorkspace()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(workspace, 0o700); err != nil {
+		return fmt.Errorf("create workspace: %w", err)
+	}
+
 	// PATH matters: launchd gives an agent a minimal PATH, so the CLIs the bridge
 	// shells out to (installed via brew or ~/.local/bin) would not be found.
 	svcPath := strings.Join([]string{
@@ -131,7 +143,7 @@ func installLaunchd(exe string) error {
   <key>ProcessType</key><string>Background</string>
 </dict>
 </plist>
-`, launchdLabel, exe, svcPath, cfgPath, outLog, errLog, home)
+`, launchdLabel, exe, svcPath, cfgPath, outLog, errLog, workspace)
 
 	if err := os.MkdirAll(filepath.Dir(plistPath), 0o755); err != nil {
 		return fmt.Errorf("create LaunchAgents dir: %w", err)
@@ -180,6 +192,14 @@ func installSystemd(exe string) error {
 		"/usr/local/bin", "/usr/bin", "/bin",
 	}, ":")
 
+	workspace, err := DefaultWorkspace()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(workspace, 0o700); err != nil {
+		return fmt.Errorf("create workspace: %w", err)
+	}
+
 	unit := fmt.Sprintf(`[Unit]
 Description=Relayent bridge — runs AI jobs on this machine's CLI subscription
 After=network-online.target
@@ -187,6 +207,8 @@ After=network-online.target
 [Service]
 Type=simple
 ExecStart=%s
+# Jobs run here, in an empty sandbox — never the user's home directory.
+WorkingDirectory=%s
 Environment=PATH=%s
 Environment=RELAYENT_CONFIG=%s
 Restart=always
@@ -194,10 +216,15 @@ RestartSec=10
 # The bridge needs no privileges beyond the user's own CLI sessions.
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=strict
+# Home stays readable because the CLIs must load their own auth sessions from
+# ~/.claude, ~/.codex and ~/.cursor — that is the subscription this exists to
+# reuse. Writes are confined to the workspace and the bridge's own state dir.
+ReadWritePaths=%s %s
 
 [Install]
 WantedBy=default.target
-`, exe, svcPath, cfgPath)
+`, exe, workspace, svcPath, cfgPath, workspace, filepath.Dir(cfgPath))
 
 	if err := os.MkdirAll(filepath.Dir(unitPath), 0o755); err != nil {
 		return fmt.Errorf("create systemd user dir: %w", err)

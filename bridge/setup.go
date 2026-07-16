@@ -207,7 +207,14 @@ func RunSetup() error {
 	fmt.Println("    • open any port on this machine (the bridge only dials out)")
 	fmt.Println("    • store or transmit your CLI credentials")
 	fmt.Println("    • let jobs edit files or run shell commands")
+	fmt.Println("    • touch your Documents, Desktop, Downloads or any personal files")
 	fmt.Println()
+	if ws, err := DefaultWorkspace(); err == nil {
+		fmt.Println("  Jobs run in a dedicated empty folder, and nowhere else:")
+		fmt.Printf("    %s\n", ws)
+		fmt.Println("    Override with RELAYENT_WORKSPACE if you want a different one.")
+		fmt.Println()
+	}
 	fmt.Println("  What to keep in mind:")
 	fmt.Println("    • anyone holding the pairing key can send jobs here and use your quota")
 	fmt.Println("    • only pair with a relay you control or trust")
@@ -331,6 +338,12 @@ func RunDoctor() error {
 	}
 	fmt.Printf("  ✓ relay URL: %s\n", cfg.RelayURL)
 	fmt.Printf("  ✓ key fingerprint: %s\n", fingerprint(cfg.PairingKey))
+	fmt.Printf("  ✓ job workspace: %s\n", cfg.Workspace)
+	if home, err := os.UserHomeDir(); err == nil && cfg.Workspace == home {
+		fmt.Println("  ! workspace is your HOME directory — jobs would run against your personal")
+		fmt.Println("    files and macOS will prompt for Desktop/Documents access. Unset")
+		fmt.Println("    RELAYENT_WORKSPACE to use the dedicated sandbox instead.")
+	}
 
 	if err := validateRelayURL(cfg.RelayURL); err != nil {
 		fmt.Printf("  ! %v\n", err)

@@ -2,9 +2,12 @@
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
 // Description: Shared adapter helpers — JSON extraction from noisy CLI output and
-//   temp-file handling for JSON schemas.
+//
+//	temp-file handling for JSON schemas.
+//
 // AI usage: Built with assistance from AI tools for implementation acceleration,
-//   review, and refactoring.
+//
+//	review, and refactoring.
 package adapters
 
 import (
@@ -59,4 +62,3 @@ func stripFences(text string) string {
 	body = strings.TrimPrefix(body, "json")
 	return strings.TrimSpace(body)
 }
-

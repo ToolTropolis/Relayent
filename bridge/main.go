@@ -196,6 +196,7 @@ func (b *bridge) process(ctx context.Context, job api.Job) {
 			Prompt:     job.Prompt,
 			System:     job.System,
 			JSONSchema: job.JSONSchema,
+			WorkDir:    b.cfg.Workspace,
 		})
 		cancel()
 		if runErr != nil {

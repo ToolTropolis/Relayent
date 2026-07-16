@@ -2,9 +2,12 @@
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
 // Description: Codex adapter. Runs `codex exec` non-interactively using the user's
-//   Codex subscription (no API key). Reads the prompt from stdin.
+//
+//	Codex subscription (no API key). Reads the prompt from stdin.
+//
 // AI usage: Built with assistance from AI tools for implementation acceleration,
-//   review, and refactoring.
+//
+//	review, and refactoring.
 package adapters
 
 import (
@@ -56,6 +59,8 @@ func (a *CodexAdapter) Run(ctx context.Context, req Request) (Result, error) {
 
 	cmd := exec.CommandContext(ctx, a.Bin, args...)
 	cmd.Stdin = strings.NewReader(prompt)
+	// Run in the bridge's sandbox, never the inherited cwd — see Request.WorkDir.
+	cmd.Dir = req.WorkDir
 	cmd.Env = os.Environ()
 
 	var stdout, stderr bytes.Buffer

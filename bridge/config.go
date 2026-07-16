@@ -13,6 +13,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,44 @@ type Config struct {
 	PairingKey string        // bearer key identifying this user's job namespace
 	PollWait   time.Duration // long-poll wait per /v1/jobs/next request
 	JobTimeout time.Duration // max wall-clock per CLI invocation
+
+	// Workspace is the ONLY directory jobs run in. It defaults to a dedicated
+	// empty sandbox (~/.relayent/workspace), never the user's home: a CLI
+	// launched from $HOME inherits it as its working directory, which makes
+	// macOS attribute any file access to the bridge and prompt for Desktop /
+	// Documents / Downloads. Jobs have no need for the user's files, so the
+	// default grants none — set RELAYENT_WORKSPACE deliberately to widen it.
+	Workspace string
+}
+
+// DefaultWorkspace returns the dedicated sandbox directory jobs run in.
+func DefaultWorkspace() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("locate home directory: %w", err)
+	}
+	return filepath.Join(home, configDirName, "workspace"), nil
+}
+
+// resolveWorkspace picks the job working directory and creates it. An explicit
+// RELAYENT_WORKSPACE wins; otherwise the empty default sandbox is used.
+func resolveWorkspace(configured string) (string, error) {
+	ws := strings.TrimSpace(configured)
+	if ws == "" {
+		def, err := DefaultWorkspace()
+		if err != nil {
+			return "", err
+		}
+		ws = def
+	}
+	abs, err := filepath.Abs(ws)
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace path: %w", err)
+	}
+	if err := os.MkdirAll(abs, 0o700); err != nil {
+		return "", fmt.Errorf("create workspace %s: %w", abs, err)
+	}
+	return abs, nil
 }
 
 // LoadConfig reads configuration from ~/.relayent/config.env (written by
@@ -58,6 +97,11 @@ func LoadConfig() (Config, error) {
 	if err := validateRelayURL(c.RelayURL); err != nil {
 		return c, err
 	}
+	ws, err := resolveWorkspace(pick("RELAYENT_WORKSPACE"))
+	if err != nil {
+		return c, err
+	}
+	c.Workspace = ws
 	return c, nil
 }
 

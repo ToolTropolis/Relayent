@@ -1,0 +1,51 @@
+# Caddy config for the Relayent relay.
+#
+# Caddy obtains and renews a Let's Encrypt certificate automatically, at no cost,
+# and redirects HTTP to HTTPS by default. TLS 1.3/1.2 with modern ciphers are the
+# defaults — they are deliberately not overridden here, because hand-tuning TLS
+# is how people accidentally weaken it.
+
+{
+	email {$ACME_EMAIL}
+	# Uncomment to test against Let's Encrypt staging without burning rate limits:
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$RELAYENT_DOMAIN} {
+	encode zstd gzip
+
+	# HSTS: once a browser has seen this, it refuses plaintext to this host —
+	# closing the window where a first request could be downgraded.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	reverse_proxy relay:8787 {
+		# Long-polling: a consumer's GET /v1/jobs/{id}?wait=1 can legitimately
+		# hold open ~90s, and a bridge's poll ~25s. The default 0 means no
+		# timeout, but being explicit documents the requirement — set these too
+		# low and jobs appear to fail for no reason.
+		transport http {
+			response_header_timeout 120s
+			read_timeout 120s
+		}
+		# Caddy sets X-Forwarded-For/Proto; the relay only trusts them because
+		# RELAYENT_TRUST_PROXY=1 is set for that container.
+	}
+
+	log {
+		output stdout
+		format json
+		# Never log the Authorization header — it carries the pairing key.
+		# Caddy does not log request headers by default; this filter makes the
+		# guarantee explicit and survives someone enabling verbose logging.
+		format filter {
+			wrap json
+			fields {
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+			}
+		}
+	}
+}
