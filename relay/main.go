@@ -324,7 +324,9 @@ func (s *server) postCapabilities(w http.ResponseWriter, r *http.Request, key st
 	if !decode(w, r, &caps) {
 		return
 	}
-	s.q.ReportCapabilities(key, caps)
+	// Anyone with a valid key can post this, and it is rendered on the status
+	// page — store only known backends and bounded strings.
+	s.q.ReportCapabilities(key, sanitizeCapabilities(caps))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
 }
 

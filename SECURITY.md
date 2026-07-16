@@ -60,7 +60,8 @@ Cursor credentials — it cannot, because it never has them.
 | Config file theft by another local user | `~/.relayent/config.env` written atomically at `0600` |
 | Slowloris / connection exhaustion | Explicit server read/write/idle timeouts |
 | Header spoofing to bypass limits | `X-Forwarded-For`/`Proto` honoured only when `RELAYENT_TRUST_PROXY=1` |
-| XSS on the status page | CSP forbids all external loads; `nosniff`, `DENY` framing, `no-referrer` |
+| XSS on the status page | Bridge-reported values are validated server-side against a known set, rendered via `textContent` (never `innerHTML`), and the page's script runs under a per-request CSP nonce — `script-src` never uses `'unsafe-inline'`, which would also authorise injected `onerror=` handlers |
+| Other web attacks | CSP forbids all external loads; `nosniff`, `DENY` framing, `no-referrer` |
 | Rotation downtime | Multiple keys valid at once; old keys flagged `key_retiring` |
 
 ---

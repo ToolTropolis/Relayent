@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/navjyotnishant/relayent/internal/api"
 )
 
 // minKeyLen is the shortest pairing key accepted when the relay is reachable off
@@ -281,6 +283,59 @@ SECURITY
   commit it, never log it, and serve the relay over TLS in production.
 `
 
+// knownBackends is the closed set of backend names the relay will store. The
+// relay knows every valid name, so there is no reason to accept anything else.
+var knownBackends = map[string]bool{
+	"claude": true, "codex": true, "gemini": true, "cursor": true,
+}
+
+// sanitizeCapabilities filters a bridge's self-report down to values the relay is
+// willing to serve back. Capabilities are attacker-controllable — anyone with a
+// valid pairing key can POST them — and they are later rendered on the status
+// page, so unknown or oversized values are dropped rather than stored.
+//
+// This is defence in depth: the status page also builds its DOM with textContent
+// so injected markup cannot execute. Neither control should be removed on the
+// assumption that the other one holds.
+func sanitizeCapabilities(caps api.BridgeCapabilities) api.BridgeCapabilities {
+	out := api.BridgeCapabilities{
+		Version:  clampString(caps.Version, 64),
+		Hostname: clampString(caps.Hostname, 253), // max DNS name length
+	}
+	seen := map[string]bool{}
+	for _, b := range caps.Backends {
+		name := strings.ToLower(strings.TrimSpace(b.Name))
+		if !knownBackends[name] || seen[name] {
+			continue // unknown backend, or a duplicate padding the list
+		}
+		seen[name] = true
+		out.Backends = append(out.Backends, api.BackendInfo{
+			Name:      name,
+			Installed: b.Installed,
+			Supported: b.Supported,
+			Ready:     b.Ready,
+			Model:     clampString(b.Model, 64),
+		})
+	}
+	return out
+}
+
+// clampString trims a value and caps its length, dropping control characters
+// that have no place in a display string.
+func clampString(s string, max int) string {
+	s = strings.TrimSpace(s)
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
+	if len(s) > max {
+		return s[:max]
+	}
+	return s
+}
+
 // --- rate limiting ---
 
 // limiter is a token-bucket rate limiter keyed by an arbitrary string (pairing
@@ -360,13 +415,18 @@ func clientIP(r *http.Request, trustProxy bool) string {
 	return host
 }
 
-// securityHeaders sets conservative response headers. The status page is served
-// from this same origin, so the CSP forbids external loads outright — matching
-// the "no external CDNs" rule and blocking script injection from doing anything.
+// securityHeaders sets conservative response headers. The CSP forbids external
+// loads outright — matching the "no external CDNs" rule.
+//
+// script-src is 'none' here: API responses must never execute anything. The
+// status page overrides this header with a per-request nonce for its own script
+// (see statusPage). Note that 'unsafe-inline' is deliberately NOT used for
+// scripts — it would also authorise inline event handlers such as onerror=,
+// which is exactly how injected markup gains execution.
 func securityHeaders(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy",
-			"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+			"default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")

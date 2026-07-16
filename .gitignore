@@ -6,3 +6,11 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
+
+# Local bridge state — contains the pairing key.
+.relayent/
+
+# Test/tooling output: browser-driven verification artifacts.
+.playwright-mcp/
+/status-page.png
+

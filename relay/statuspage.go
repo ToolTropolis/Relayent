@@ -12,19 +12,47 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"net/http"
+	"strings"
 )
 
 // statusPage serves the dashboard. Any unmatched path 404s so this doesn't
 // swallow bad /v1 routes.
+//
+// The page's own script runs under a per-request nonce rather than
+// 'unsafe-inline'. That distinction is load-bearing: 'unsafe-inline' also
+// authorises inline event handlers (onerror=, onclick=), so any markup that ever
+// reached the DOM could execute. With a nonce, only this script runs, and the
+// page's CSP overrides the blanket one from securityHeaders.
 func (s *server) statusPage(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
+	nonce, err := scriptNonce()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	w.Header().Set("Content-Security-Policy",
+		"default-src 'none'; script-src 'nonce-"+nonce+"'; style-src 'unsafe-inline'; "+
+			"connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(statusHTML))
+	_, _ = w.Write([]byte(strings.Replace(statusHTML, "%NONCE%", nonce, 1)))
+}
+
+// scriptNonce returns a fresh 128-bit CSP nonce. It must be unpredictable and
+// never reused across responses, or an attacker could embed a known nonce in
+// injected markup and defeat the policy.
+func scriptNonce() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawStdEncoding.EncodeToString(b), nil
 }
 
 const statusHTML = `<!doctype html>
@@ -181,13 +209,35 @@ const statusHTML = `<!doctype html>
   <p class="foot">Auto-refreshes every 5s while connected. The pairing key stays in this page.</p>
 </div>
 
-<script>
+<script nonce="%NONCE%">
 const $ = id => document.getElementById(id);
 let key = "", timer = null;
 
+// pill returns markup for a status pill. Only ever call this with literal text
+// controlled by this page — never with values from an API response.
 const pill = (good, goodText, badText) =>
   '<span class="pill ' + (good ? 'ok' : 'bad') + '"><span class="dot"></span>' +
   (good ? goodText : badText) + '</span>';
+
+// pillEl builds the same pill as a DOM node, for use where untrusted data sits
+// alongside it in a row. Text is set via textContent, so it can never be parsed
+// as markup.
+function pillEl(cls, text) {
+  const span = document.createElement("span");
+  span.className = "pill " + cls;
+  const dot = document.createElement("span");
+  dot.className = "dot";
+  span.appendChild(dot);
+  span.appendChild(document.createTextNode(text));
+  return span;
+}
+
+// pillCell wraps pillEl in a <td>.
+function pillCell(good, goodText, badText) {
+  const td = document.createElement("td");
+  td.appendChild(pillEl(good ? "ok" : "bad", good ? goodText : badText));
+  return td;
+}
 
 function fmtUptime(s) {
   if (s < 60) return s + "s";
@@ -296,17 +346,39 @@ async function refresh() {
 
     const tb = $("backends");
     const list = c.backends || [];
+    tb.replaceChildren();
     if (!list.length) {
-      tb.innerHTML = '<tr><td colspan="4" class="empty">No bridge has reported yet</td></tr>';
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 4; td.className = "empty";
+      td.textContent = "No bridge has reported yet";
+      tr.appendChild(td); tb.appendChild(tr);
     } else {
-      tb.innerHTML = list.map(b =>
-        "<tr><td><code>" + b.name + "</code></td>" +
-        "<td>" + pill(b.installed, "yes", "not found") + "</td>" +
-        "<td>" + (b.supported
-          ? '<span class="pill ok"><span class="dot"></span>implemented</span>'
-          : '<span class="pill warn"><span class="dot"></span>stub</span>') + "</td>" +
-        "<td>" + pill(b.ready, "ready", "no") + "</td></tr>"
-      ).join("");
+      // b.name is attacker-controllable: it arrives verbatim from whoever POSTed
+      // /v1/bridge/capabilities with a valid key. It MUST reach the DOM as text,
+      // never as parsed HTML — building this row by string concatenation into
+      // innerHTML was a stored XSS that could read the pairing key out of this
+      // very page. The pills below are built from server-controlled booleans only.
+      for (const b of list) {
+        const tr = document.createElement("tr");
+
+        const nameTd = document.createElement("td");
+        const code = document.createElement("code");
+        code.textContent = b.name == null ? "—" : String(b.name);
+        nameTd.appendChild(code);
+        tr.appendChild(nameTd);
+
+        tr.appendChild(pillCell(!!b.installed, "yes", "not found"));
+
+        const supTd = document.createElement("td");
+        supTd.appendChild(b.supported
+          ? pillEl("ok", "implemented")
+          : pillEl("warn", "stub"));
+        tr.appendChild(supTd);
+
+        tr.appendChild(pillCell(!!b.ready, "ready", "no"));
+        tb.appendChild(tr);
+      }
     }
   } catch (e) {
     $("err").textContent = "Error: " + e.message;

@@ -12,8 +12,11 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/navjyotnishant/relayent/internal/api"
 )
 
 func TestIsLoopbackAddr(t *testing.T) {
@@ -186,6 +189,82 @@ func TestValidateKeySetPolicyChecksEveryKey(t *testing.T) {
 	}
 	if err := validateKeySetPolicy(ParseKeySet("weak,also-weak"), "127.0.0.1:8787", false); err != nil {
 		t.Errorf("loopback relay should tolerate weak keys: %v", err)
+	}
+}
+
+// Regression: a backend name from POST /v1/bridge/capabilities was stored
+// verbatim and concatenated into the status page's innerHTML — a stored XSS that
+// could read the operator's pairing key out of the page. Anything not in the
+// known set must be dropped.
+func TestSanitizeCapabilitiesRejectsInjectedBackendNames(t *testing.T) {
+	caps := api.BridgeCapabilities{
+		Version: "1.0.0",
+		Backends: []api.BackendInfo{
+			{Name: `x<img src=q onerror="document.title=document.querySelector('#key').value">`, Ready: true},
+			{Name: "claude", Installed: true, Supported: true, Ready: true},
+			{Name: "<script>alert(1)</script>", Ready: true},
+		},
+	}
+	got := sanitizeCapabilities(caps)
+
+	if len(got.Backends) != 1 {
+		t.Fatalf("got %d backends, want 1 (only the known one) — %+v", len(got.Backends), got.Backends)
+	}
+	if got.Backends[0].Name != "claude" {
+		t.Errorf("surviving backend = %q, want claude", got.Backends[0].Name)
+	}
+	for _, b := range got.Backends {
+		if strings.ContainsAny(b.Name, "<>\"'") {
+			t.Errorf("backend name %q still contains markup characters", b.Name)
+		}
+	}
+}
+
+func TestSanitizeCapabilitiesNormalisesAndDedupes(t *testing.T) {
+	caps := api.BridgeCapabilities{
+		Backends: []api.BackendInfo{
+			{Name: "  CLAUDE  ", Ready: true},
+			{Name: "claude", Ready: true}, // duplicate after normalisation
+			{Name: "cursor", Ready: true},
+		},
+	}
+	got := sanitizeCapabilities(caps)
+	if len(got.Backends) != 2 {
+		t.Fatalf("got %d backends, want 2 (claude + cursor, deduped)", len(got.Backends))
+	}
+	if got.Backends[0].Name != "claude" {
+		t.Errorf("name not normalised: %q", got.Backends[0].Name)
+	}
+}
+
+func TestClampStringBoundsAndStripsControlChars(t *testing.T) {
+	if got := clampString("  hello  ", 64); got != "hello" {
+		t.Errorf("clampString trim = %q, want hello", got)
+	}
+	if got := clampString("ab\x00c\x1bd", 64); got != "abcd" {
+		t.Errorf("clampString should strip control chars, got %q", got)
+	}
+	if got := clampString(strings.Repeat("a", 200), 10); len(got) != 10 {
+		t.Errorf("clampString len = %d, want 10", len(got))
+	}
+}
+
+// The nonce must be unpredictable and unique per response, or injected markup
+// could carry a known nonce and execute.
+func TestScriptNonceIsUniqueAndSized(t *testing.T) {
+	seen := map[string]bool{}
+	for i := 0; i < 50; i++ {
+		n, err := scriptNonce()
+		if err != nil {
+			t.Fatalf("scriptNonce: %v", err)
+		}
+		if len(n) < 20 {
+			t.Fatalf("nonce too short: %q", n)
+		}
+		if seen[n] {
+			t.Fatalf("nonce reused: %q", n)
+		}
+		seen[n] = true
 	}
 }
 
