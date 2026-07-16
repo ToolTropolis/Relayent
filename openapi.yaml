@@ -1,0 +1,194 @@
+openapi: 3.1.0
+info:
+  title: Relayent Relay API
+  version: "1.0.0"
+  description: |
+    Relayent lets any app route AI generation to a user's locally-running CLI
+    subscription (Claude Code, Codex, Gemini, Cursor) instead of a paid API key.
+
+    This is the ONLY integration surface. Apps enqueue a job; a bridge daemon on
+    the user's machine long-polls, runs the local CLI headless, and posts the
+    result back. All requests authenticate with a per-tenant bearer "pairing key";
+    every job is scoped to that key.
+
+    Typical consumer flow:
+      1. GET  /v1/bridge/online   -> fail fast if no bridge is polling
+      2. POST /v1/jobs            -> { job_id }
+      3. GET  /v1/jobs/{id}?wait=1 (long-poll) -> { status: done|error, json|text }
+servers:
+  - url: http://localhost:8787
+    description: Local relay
+security:
+  - PairingKey: []
+paths:
+  /v1/health:
+    get:
+      summary: Liveness check (no auth)
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+  /v1/bridge/online:
+    get:
+      summary: Is a bridge currently polling for this pairing key?
+      responses:
+        "200":
+          description: Presence status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BridgeOnlineResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/jobs:
+    post:
+      summary: Enqueue an AI job for the user's local bridge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnqueueRequest"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnqueueResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/jobs/next:
+    get:
+      summary: Bridge long-polls for the next queued job
+      description: Used by the bridge daemon. Returns 204 if no job arrives within `wait` seconds.
+      parameters:
+        - name: wait
+          in: query
+          schema: { type: integer, default: 25, maximum: 55 }
+          description: Seconds to block waiting for a job.
+      responses:
+        "200":
+          description: A job to run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "204": { description: No job available within the wait window }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/jobs/{id}/result:
+    post:
+      summary: Bridge posts a job's result
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResultRequest"
+      responses:
+        "200": { description: Result recorded }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/jobs/{id}:
+    get:
+      summary: Consumer fetches a job's status/result
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: wait
+          in: query
+          schema: { type: string, enum: ["0", "1", "true", "false"] }
+          description: Set to 1/true to long-poll until the result is ready.
+      responses:
+        "200":
+          description: Current job status and result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobResult"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+components:
+  securitySchemes:
+    PairingKey:
+      type: http
+      scheme: bearer
+      description: Per-tenant pairing key shared by the consuming app and the bridge.
+  responses:
+    Unauthorized:
+      description: Missing or invalid pairing key
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: Unknown job for this pairing key
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+  schemas:
+    EnqueueRequest:
+      type: object
+      required: [backend, prompt]
+      properties:
+        backend: { type: string, enum: [claude, codex, gemini, cursor] }
+        model: { type: string, description: Optional CLI model override }
+        prompt: { type: string }
+        system: { type: string, description: Optional system instruction }
+        json_schema:
+          description: Optional JSON Schema; when set the bridge requests structured JSON.
+          type: object
+          additionalProperties: true
+    EnqueueResponse:
+      type: object
+      properties:
+        job_id: { type: string }
+    Job:
+      type: object
+      properties:
+        id: { type: string }
+        backend: { type: string }
+        model: { type: string }
+        prompt: { type: string }
+        system: { type: string }
+        json_schema: { type: object, additionalProperties: true }
+    ResultRequest:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        json: { description: Parsed object when json_schema was requested }
+        text: { type: string }
+        error: { type: string }
+    JobResult:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [pending, done, error] }
+        json: {}
+        text: { type: string }
+        error: { type: string }
+    BridgeOnlineResponse:
+      type: object
+      properties:
+        online: { type: boolean }
+    ErrorResponse:
+      type: object
+      properties:
+        error: { type: string }
