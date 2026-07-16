@@ -142,6 +142,40 @@ its fingerprint is shown, which matches the relay's status page.
 Jobs run in a dedicated empty folder (`~/.relayent/workspace`) — never your personal files.
 Point `workspace` somewhere else only if you deliberately want jobs to see it.
 
+## Integrating an app
+
+Everything an app needs is on the `/v1` API — no CLI, no SDK required. Three calls:
+
+```bash
+# 1. Fail fast: is anyone home? (Relayent never falls back to a paid API — that is the point)
+curl -s $RELAY/v1/bridge/online -H "Authorization: Bearer $KEY"
+# -> {"online":true}
+
+# 2. What can it run, and with which models?
+curl -s $RELAY/v1/bridge/capabilities -H "Authorization: Bearer $KEY"
+# -> backends[] with ready, models[], default_model, models_probed
+
+# 3. Run a job
+ID=$(curl -s -XPOST $RELAY/v1/jobs -H "Authorization: Bearer $KEY" \
+  -d '{"backend":"cursor","model":"auto","prompt":"...","json_schema":{...}}' | jq -r .job_id)
+curl -s "$RELAY/v1/jobs/$ID?wait=1" -H "Authorization: Bearer $KEY"    # long-polls
+curl -s -X DELETE "$RELAY/v1/jobs/$ID" -H "Authorization: Bearer $KEY"  # changed your mind
+```
+
+**Discovering models.** `models[]` lists what you can pass as `model`; `default_model` is what
+runs if you omit it. **`models_probed` matters**: `true` means the list came from the CLI and is
+accurate for that install; `false` means it is a static declaration that may drift — treat it as
+advisory, not exhaustive. An empty list does not mean models are unsupported, only
+undiscoverable (the CLI has no enumerate command) — a name you know still works.
+
+**Cancelling.** `DELETE /v1/jobs/{id}` returns `was_status`, and it is the honest bit:
+`pending` means the job was still queued and the work is genuinely prevented; `running` means a
+bridge already claimed it — **the CLI cannot be stopped**, because the relay has no channel to
+an outbound-only bridge, so the quota is already spent and all you have done is stop waiting.
+
+The [OpenAPI contract](openapi.yaml) is the source of truth. `clients/python/` is optional
+convenience, not a dependency — any HTTP client works.
+
 ## Checking status
 
 Two views, both live.
