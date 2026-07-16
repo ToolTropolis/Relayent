@@ -12,6 +12,7 @@ import (
 	"sort"
 
 	"github.com/navjyotnishant/relayent/bridge/adapters"
+	"github.com/navjyotnishant/relayent/internal/api"
 )
 
 // Registry holds the available backend adapters keyed by name.
@@ -51,5 +52,33 @@ func (r *Registry) Available() []string {
 		}
 	}
 	sort.Strings(out)
+	return out
+}
+
+// binPresenter is implemented by stub adapters, which report Available()==false
+// (they can't run jobs) but can still say whether the CLI exists on this host.
+type binPresenter interface{ BinPresent() bool }
+
+// Describe reports every known backend: whether its CLI is installed here, whether
+// the adapter is implemented, and whether it can actually run jobs (Ready).
+// The relay cannot see this machine, so the bridge is the source of truth.
+func (r *Registry) Describe() []api.BackendInfo {
+	out := make([]api.BackendInfo, 0, len(r.adapters))
+	for name, a := range r.adapters {
+		ready := a.Available() // implemented adapters gate on the CLI being present
+		installed, supported := ready, true
+		// A stub adapter is never Ready; ask it separately whether the CLI exists.
+		if bp, ok := a.(binPresenter); ok {
+			supported = false
+			installed = bp.BinPresent()
+		}
+		out = append(out, api.BackendInfo{
+			Name:      name,
+			Installed: installed,
+			Supported: supported,
+			Ready:     ready,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }

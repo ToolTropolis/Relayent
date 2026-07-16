@@ -17,6 +17,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -25,6 +26,9 @@ import (
 	"github.com/navjyotnishant/relayent/bridge/adapters"
 	"github.com/navjyotnishant/relayent/internal/api"
 )
+
+// Version is the bridge build version, overridable at link time.
+var Version = "1.0.0"
 
 func main() {
 	cfg, err := LoadConfig()
@@ -40,6 +44,11 @@ func main() {
 	defer stop()
 
 	b := &bridge{cfg: cfg, reg: reg, http: &http.Client{Timeout: cfg.PollWait + 10*time.Second}}
+	// Publish what this machine can do so the relay's status API can surface it,
+	// then keep it fresh in the background.
+	b.reportCapabilities(ctx)
+	go b.capabilitiesLoop(ctx)
+
 	b.run(ctx)
 	log.Printf("[relayent-bridge] shutting down")
 }
@@ -113,7 +122,7 @@ func (b *bridge) process(ctx context.Context, job api.Job) {
 	if err != nil {
 		res = api.ResultRequest{OK: false, Error: err.Error()}
 	} else if !adapter.Available() {
-		res = api.ResultRequest{OK: false, Error: fmt.Sprintf("backend %q CLI not installed on this machine", job.Backend)}
+		res = api.ResultRequest{OK: false, Error: b.unavailableReason(job.Backend, adapter)}
 	} else {
 		jobCtx, cancel := context.WithTimeout(ctx, b.cfg.JobTimeout)
 		out, runErr := adapter.Run(jobCtx, adapters.Request{
@@ -166,6 +175,67 @@ func (b *bridge) postResult(ctx context.Context, id string, res api.ResultReques
 		return fmt.Errorf("relay returned %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
 	}
 	return nil
+}
+
+// unavailableReason explains why a backend can't run, distinguishing "the adapter
+// isn't implemented yet" from "the CLI isn't installed here".
+func (b *bridge) unavailableReason(name string, a adapters.Adapter) string {
+	if bp, ok := a.(interface{ BinPresent() bool }); ok {
+		if bp.BinPresent() {
+			return fmt.Sprintf("backend %q is not supported yet by this bridge (adapter is a stub)", name)
+		}
+		return fmt.Sprintf("backend %q is not supported yet and its CLI is not installed on this machine", name)
+	}
+	return fmt.Sprintf("backend %q CLI not installed on this machine", name)
+}
+
+// reportCapabilities tells the relay which backends exist on this machine, so
+// GET /v1/bridge/capabilities and the status page can show them.
+func (b *bridge) reportCapabilities(ctx context.Context) {
+	host, _ := os.Hostname()
+	caps := api.BridgeCapabilities{
+		Version:  Version,
+		Hostname: host,
+		Backends: b.reg.Describe(),
+	}
+	body, err := json.Marshal(caps)
+	if err != nil {
+		log.Printf("[relayent-bridge] marshal capabilities: %v", err)
+		return
+	}
+	url := strings.TrimRight(b.cfg.RelayURL, "/") + "/v1/bridge/capabilities"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	b.authorize(req)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[relayent-bridge] report capabilities: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("[relayent-bridge] report capabilities: relay returned %d", resp.StatusCode)
+	}
+}
+
+// capabilitiesLoop refreshes the report periodically so a restarted relay (which
+// holds this state in memory) re-learns what this bridge supports.
+func (b *bridge) capabilitiesLoop(ctx context.Context) {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			b.reportCapabilities(ctx)
+		}
+	}
 }
 
 func (b *bridge) authorize(req *http.Request) {

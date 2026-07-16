@@ -33,16 +33,21 @@ const (
 	onlineWindow    = 40 * time.Second // bridge is "online" if it polled within this
 )
 
+// Version is the relay build version, overridable at link time.
+var Version = "1.0.0"
+
 type server struct {
-	q       *Queue
-	pairKey string // the single accepted pairing key (from env); "" = allow any non-empty key
+	q         *Queue
+	pairKey   string // the single accepted pairing key (from env); "" = allow any non-empty key
+	startedAt time.Time
 }
 
 func main() {
 	addr := envDefault("RELAYENT_LISTEN", ":8787")
 	srv := &server{
-		q:       NewQueue(jobTTL, onlineWindow),
-		pairKey: os.Getenv("RELAYENT_PAIRING_KEY"),
+		q:         NewQueue(jobTTL, onlineWindow),
+		pairKey:   os.Getenv("RELAYENT_PAIRING_KEY"),
+		startedAt: time.Now(),
 	}
 
 	mux := http.NewServeMux()
@@ -52,6 +57,10 @@ func main() {
 	mux.HandleFunc("POST /v1/jobs/{id}/result", srv.auth(srv.postResult))
 	mux.HandleFunc("GET /v1/jobs/{id}", srv.auth(srv.fetch))
 	mux.HandleFunc("GET /v1/bridge/online", srv.auth(srv.bridgeOnline))
+	mux.HandleFunc("GET /v1/status", srv.auth(srv.status))
+	mux.HandleFunc("GET /v1/bridge/capabilities", srv.auth(srv.getCapabilities))
+	mux.HandleFunc("POST /v1/bridge/capabilities", srv.auth(srv.postCapabilities))
+	mux.HandleFunc("GET /", srv.statusPage)
 
 	log.Printf("[relayent-relay] listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
@@ -159,6 +168,39 @@ func (s *server) fetch(w http.ResponseWriter, r *http.Request, key string) {
 
 func (s *server) bridgeOnline(w http.ResponseWriter, r *http.Request, key string) {
 	writeJSON(w, http.StatusOK, api.BridgeOnlineResponse{Online: s.q.BridgeOnline(key)})
+}
+
+// status reports relay-level health and this pairing key's view of the system.
+func (s *server) status(w http.ResponseWriter, r *http.Request, key string) {
+	writeJSON(w, http.StatusOK, api.StatusResponse{
+		Status:         "ok",
+		Version:        Version,
+		UptimeSeconds:  int64(time.Since(s.startedAt).Seconds()),
+		BridgeOnline:   s.q.BridgeOnline(key),
+		PendingJobs:    s.q.PendingCount(key),
+		RequirePairing: s.pairKey != "",
+	})
+}
+
+// getCapabilities returns what the bridge last reported it supports.
+func (s *server) getCapabilities(w http.ResponseWriter, r *http.Request, key string) {
+	caps, reportedAt, online := s.q.Capabilities(key)
+	resp := api.CapabilitiesResponse{Online: online, Capabilities: caps}
+	if !reportedAt.IsZero() {
+		resp.ReportedAt = reportedAt.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// postCapabilities lets a bridge register what backends it has available. The relay
+// cannot see the user's machine, so the bridge is the source of truth.
+func (s *server) postCapabilities(w http.ResponseWriter, r *http.Request, key string) {
+	var caps api.BridgeCapabilities
+	if !decode(w, r, &caps) {
+		return
+	}
+	s.q.ReportCapabilities(key, caps)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
 }
 
 // --- helpers ---

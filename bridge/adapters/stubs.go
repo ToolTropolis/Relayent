@@ -1,9 +1,9 @@
 // Primary author: Navjyot Nishant
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
-// Description: Placeholder adapters for Gemini and Cursor CLIs. They register the
-//   backend name but report unavailable until each CLI's non-interactive interface
-//   is wired. Follow the ClaudeAdapter shape when implementing.
+// Description: Placeholder adapter for the Gemini CLI. It registers the backend
+//   name but reports unavailable until the CLI's non-interactive interface is
+//   wired. Follow the ClaudeAdapter/CursorAdapter shape when implementing.
 // AI usage: Built with assistance from AI tools for implementation acceleration,
 //   review, and refactoring.
 package adapters
@@ -28,7 +28,12 @@ func NewGeminiAdapter() *GeminiAdapter {
 
 func (a *GeminiAdapter) Name() string { return "gemini" }
 
-func (a *GeminiAdapter) Available() bool {
+// Available reports false: the CLI may be installed, but this adapter cannot drive
+// it yet, and claiming otherwise would let jobs route here and fail.
+func (a *GeminiAdapter) Available() bool { return false }
+
+// BinPresent reports whether the CLI itself exists, independent of adapter support.
+func (a *GeminiAdapter) BinPresent() bool {
 	_, err := exec.LookPath(a.Bin)
 	return err == nil
 }
@@ -37,24 +42,3 @@ func (a *GeminiAdapter) Run(ctx context.Context, req Request) (Result, error) {
 	return Result{}, fmt.Errorf("gemini adapter not implemented yet")
 }
 
-// CursorAdapter is a stub until the Cursor agent/CLI headless interface is confirmed.
-type CursorAdapter struct{ Bin string }
-
-func NewCursorAdapter() *CursorAdapter {
-	bin := os.Getenv("RELAYENT_CURSOR_BIN")
-	if bin == "" {
-		bin = "cursor-agent"
-	}
-	return &CursorAdapter{Bin: bin}
-}
-
-func (a *CursorAdapter) Name() string { return "cursor" }
-
-func (a *CursorAdapter) Available() bool {
-	_, err := exec.LookPath(a.Bin)
-	return err == nil
-}
-
-func (a *CursorAdapter) Run(ctx context.Context, req Request) (Result, error) {
-	return Result{}, fmt.Errorf("cursor adapter not implemented yet")
-}

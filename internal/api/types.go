@@ -68,6 +68,43 @@ type BridgeOnlineResponse struct {
 	Online bool `json:"online"`
 }
 
+// BackendInfo describes one backend adapter as seen by a bridge.
+// Ready == Supported && Installed: only then will jobs for it succeed.
+type BackendInfo struct {
+	Name      string `json:"name"`      // "claude" | "codex" | "gemini" | "cursor"
+	Installed bool   `json:"installed"` // is the backing CLI present on the bridge host?
+	Supported bool   `json:"supported"` // is the adapter implemented (not a stub)?
+	Ready     bool   `json:"ready"`     // can this backend actually run jobs now?
+	Model     string `json:"model,omitempty"`
+}
+
+// BridgeCapabilities is what a bridge reports about itself. The bridge sends this
+// (via the ?caps query on the poll, or a dedicated register) so the relay — which
+// cannot see the user's machine — can surface what backends are available.
+type BridgeCapabilities struct {
+	Version  string        `json:"version"`
+	Hostname string        `json:"hostname,omitempty"`
+	Backends []BackendInfo `json:"backends"`
+}
+
+// CapabilitiesResponse is returned by GET /v1/bridge/capabilities. Online is false
+// (and Backends empty) when no bridge has reported for this pairing key recently.
+type CapabilitiesResponse struct {
+	Online       bool               `json:"online"`
+	ReportedAt   string             `json:"reported_at,omitempty"` // RFC3339 of last report
+	Capabilities BridgeCapabilities `json:"capabilities"`
+}
+
+// StatusResponse is returned by GET /v1/status — relay-level health/introspection.
+type StatusResponse struct {
+	Status         string `json:"status"`          // "ok"
+	Version        string `json:"version"`         // relay build version
+	UptimeSeconds  int64  `json:"uptime_seconds"`  // since process start
+	BridgeOnline   bool   `json:"bridge_online"`   // is a bridge polling for the caller's key
+	PendingJobs    int    `json:"pending_jobs"`    // queued jobs for the caller's key
+	RequirePairing bool   `json:"require_pairing"` // is a fixed pairing key enforced
+}
+
 // ErrorResponse is the uniform error envelope for 4xx/5xx responses.
 type ErrorResponse struct {
 	Error string `json:"error"`

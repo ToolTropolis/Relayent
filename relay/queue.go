@@ -39,9 +39,17 @@ type Queue struct {
 	waiters map[string][]chan struct{}
 	// lastPoll[key] is the last time any bridge polled ClaimNext for that key.
 	lastPoll map[string]time.Time
+	// caps[key] is the most recent capabilities a bridge reported for that key.
+	caps map[string]capsEntry
 
 	ttl          time.Duration // how long a finished/orphaned job is retained
 	onlineWindow time.Duration // a bridge counts as "online" if it polled within this window
+}
+
+// capsEntry is a stored capabilities report with its timestamp.
+type capsEntry struct {
+	caps       api.BridgeCapabilities
+	reportedAt time.Time
 }
 
 // NewQueue builds a Queue and starts its janitor goroutine.
@@ -52,6 +60,7 @@ func NewQueue(ttl, onlineWindow time.Duration) *Queue {
 		jobKey:       make(map[string]string),
 		waiters:      make(map[string][]chan struct{}),
 		lastPoll:     make(map[string]time.Time),
+		caps:         make(map[string]capsEntry),
 		ttl:          ttl,
 		onlineWindow: onlineWindow,
 	}
@@ -226,6 +235,42 @@ func (q *Queue) BridgeOnline(key string) bool {
 	defer q.mu.Unlock()
 	last, ok := q.lastPoll[key]
 	return ok && time.Since(last) <= q.onlineWindow
+}
+
+// ReportCapabilities stores what a bridge says it can do for this pairing key.
+// The relay cannot inspect the user's machine, so this is the only source of truth
+// for which CLI backends are actually installed there.
+func (q *Queue) ReportCapabilities(key string, caps api.BridgeCapabilities) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.caps[key] = capsEntry{caps: caps, reportedAt: time.Now()}
+}
+
+// Capabilities returns the last reported capabilities for key, its report time,
+// and whether a bridge is currently online.
+func (q *Queue) Capabilities(key string) (api.BridgeCapabilities, time.Time, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	e, ok := q.caps[key]
+	last, pollOK := q.lastPoll[key]
+	online := pollOK && time.Since(last) <= q.onlineWindow
+	if !ok {
+		return api.BridgeCapabilities{}, time.Time{}, online
+	}
+	return e.caps, e.reportedAt, online
+}
+
+// PendingCount returns how many jobs are queued (unclaimed) for key.
+func (q *Queue) PendingCount(key string) int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	n := 0
+	for _, id := range q.pending[key] {
+		if _, ok := q.jobs[id]; ok {
+			n++
+		}
+	}
+	return n
 }
 
 // janitor periodically evicts jobs older than the TTL so memory stays bounded.

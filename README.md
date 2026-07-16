@@ -30,6 +30,12 @@ own authenticated session — it never stores or handles credentials.
 | **API** (`openapi.yaml`) | The versioned `/v1` contract — the **only** integration surface. | — |
 | **Client** (`clients/python/`) | Optional Python convenience over the API. | Inside the consuming app. |
 
+The relay is **deploy-anywhere**, not localhost-only: a laptop, a VPS, a container, or next to
+your app. It only needs to be reachable by both the consuming app and the bridge, which are
+decoupled from its location purely by `RELAYENT_RELAY_URL`. The quick start below uses
+`localhost` for convenience; in production put the relay behind TLS. The bridge still needs no
+inbound connectivity wherever the relay lives — it always dials out.
+
 ## Quick start (local)
 
 ```bash
@@ -84,8 +90,16 @@ this key is accepted; otherwise any non-empty key gets its own isolated namespac
 |---|---|---|
 | `claude` | ✅ | `claude -p --output-format json [--json-schema] [--model]`, prompt on stdin |
 | `codex` | ✅ | `codex exec -`, prompt on stdin |
+| `cursor` | ✅ | `cursor-agent -p --output-format json --mode ask --trust`, prompt as an argument |
 | `gemini` | 🔜 stub | wire the Gemini CLI headless mode |
-| `cursor` | 🔜 stub | wire the Cursor agent headless mode |
+
+`cursor` runs in `--mode ask` (read-only Q&A) so a generation job can never edit files or run
+shell commands. `--trust` is required for headless runs. The CLI has no schema flag, so the
+adapter asks for JSON in-prompt and retries once to repair malformed output.
+
+A backend is only usable when its CLI is **installed**, an adapter **supports** it, and both
+hold — reported per backend as `installed` / `supported` / `ready` by
+`GET /v1/bridge/capabilities`. A CLI on `PATH` alone does not make a backend `ready`.
 
 Add a backend: implement `adapters.Adapter` in `bridge/adapters/`, register it in
 `bridge/registry.go`. One file + one line.

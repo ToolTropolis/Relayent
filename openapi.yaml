@@ -45,6 +45,53 @@ paths:
               schema:
                 $ref: "#/components/schemas/BridgeOnlineResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/status:
+    get:
+      summary: Relay health and introspection for the caller's pairing key
+      responses:
+        "200":
+          description: Relay status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/bridge/capabilities:
+    get:
+      summary: What backends the caller's bridge reports it can run
+      description: |
+        Online is false and backends is empty when no bridge has reported for this
+        pairing key recently. A backend is only usable when ready is true.
+      responses:
+        "200":
+          description: Last reported bridge capabilities
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapabilitiesResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Bridge self-reports its capabilities
+      description: |
+        Called by the bridge on startup and periodically thereafter. The relay cannot
+        see the user's machine, so this is the only source of backend availability.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BridgeCapabilities"
+      responses:
+        "200":
+          description: Capabilities recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: recorded }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/jobs:
     post:
       summary: Enqueue an AI job for the user's local bridge
@@ -188,6 +235,49 @@ components:
       type: object
       properties:
         online: { type: boolean }
+    StatusResponse:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        version: { type: string, description: Relay build version }
+        uptime_seconds: { type: integer, format: int64 }
+        bridge_online:
+          type: boolean
+          description: Is a bridge currently polling for the caller's key
+        pending_jobs: { type: integer, description: Queued jobs for the caller's key }
+        require_pairing:
+          type: boolean
+          description: Is a fixed RELAYENT_PAIRING_KEY enforced by this relay
+    BackendInfo:
+      type: object
+      description: |
+        Availability of one backend on the bridge host. These three flags are distinct:
+        a CLI can be installed while its adapter is still a stub, in which case the
+        backend is not usable. Only trust `ready`.
+      properties:
+        name: { type: string, enum: [claude, codex, gemini, cursor] }
+        installed: { type: boolean, description: "Is the backing CLI present on the bridge host?" }
+        supported: { type: boolean, description: "Is the adapter implemented (not a stub)?" }
+        ready: { type: boolean, description: "Can this backend actually run jobs now?" }
+        model: { type: string, description: "Default model, when the adapter reports one" }
+    BridgeCapabilities:
+      type: object
+      required: [version, backends]
+      properties:
+        version: { type: string, description: Bridge build version }
+        hostname: { type: string }
+        backends:
+          type: array
+          items: { $ref: "#/components/schemas/BackendInfo" }
+    CapabilitiesResponse:
+      type: object
+      properties:
+        online: { type: boolean }
+        reported_at:
+          type: string
+          format: date-time
+          description: RFC3339 timestamp of the last capabilities report
+        capabilities: { $ref: "#/components/schemas/BridgeCapabilities" }
     ErrorResponse:
       type: object
       properties:
