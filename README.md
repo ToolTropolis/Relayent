@@ -142,6 +142,54 @@ its fingerprint is shown, which matches the relay's status page.
 Jobs run in a dedicated empty folder (`~/.relayent/workspace`) — never your personal files.
 Point `workspace` somewhere else only if you deliberately want jobs to see it.
 
+## Checking status
+
+Two views, both live.
+
+**The relay's web dashboard — open the relay's URL in a browser:**
+
+```
+https://your-relay.example.com        (or http://localhost:8787 for a local relay)
+```
+
+It asks for your pairing key, then shows relay health and uptime, whether a bridge is online,
+pending jobs, and each backend's readiness. It auto-refreshes every 5s. A **Security** card
+grades the deployment honestly — if it says *"NO — traffic is in the clear"*, the relay is
+network-reachable without TLS and you should fix that before using it. The key stays in the
+page and is only ever sent to the relay's own `/v1` API.
+
+The page shows your key's **fingerprint** (an 8-char hash, never the key). It matches what
+`relayent-bridge config list` prints — that is how you confirm both sides hold the same key.
+
+**The bridge's terminal dashboard — on the machine running the bridge:**
+
+```bash
+relayent-bridge monitor      # Ctrl-C to quit
+```
+
+Connection state, bridge polling status, backend readiness, and a live tail of recent jobs,
+refreshed every 2s. Colour is disabled automatically when piped. It never prints the key, so
+it is safe to screenshot when asking for help.
+
+**Everything else:**
+
+```bash
+relayent-bridge status                     # is the login service running?
+relayent-bridge doctor                     # diagnose config, connectivity, backends
+tail -f ~/.relayent/logs/bridge.err.log    # raw job activity
+```
+
+⚠️ Job activity is in `bridge.err.log`, **not** `bridge.out.log` — Go's logger writes to
+stderr. `bridge.out.log` stays empty; it is not a sign anything is broken.
+
+From any machine with the key, the same data is available over the API:
+
+```bash
+curl -s $RELAY/v1/status              -H "Authorization: Bearer $KEY"   # health, tls, key fingerprint
+curl -s $RELAY/v1/bridge/online       -H "Authorization: Bearer $KEY"   # {"online":true}
+curl -s $RELAY/v1/bridge/capabilities -H "Authorization: Bearer $KEY"   # which backends are ready
+```
+
 Service logs go to `~/.relayent/logs/` and are rotated at 5 MiB, keeping 3 generations —
 neither launchd nor systemd rotates a service's log, so the bridge does it itself.
 

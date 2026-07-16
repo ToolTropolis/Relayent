@@ -103,7 +103,16 @@ silence it with `RELAYENT_ALLOW_INSECURE`.
 |---|---|
 | Part 1 (bridge), 2A (localhost), Part 3 (verification) | ✅ Executed command-by-command; the outputs below are what they really print |
 | 2B (private network) | ⚠️ Same binaries as 2A, but the network path is untested |
-| **2C (public + TLS)** | ⚠️ **Never run end-to-end.** Issuance needs a real domain and public DNS. Compose config is validated; TLS is not. Expect friction; verify hard |
+| 2C (public + TLS) | ✅ Run end-to-end against a real domain: cert issued, relay served over HTTPS behind a reverse proxy, `"tls":true` confirmed, a real job returned structured JSON, and a 90s long-poll survived the proxy |
+
+**Two things 2C's live run turned up**, worth expecting:
+- **Let's Encrypt's 50-certs-per-168h limit is per _registered domain_ and is shared.** On a
+  free subdomain host (FreeDNS, DuckDNS…) other people's certs count against yours. The first
+  attempt failed on exactly this; the window rolled 5 minutes later. Wait it out — never loop.
+- **A cloud host's internal DNS resolver can lag well behind public ones.** On Oracle Cloud the
+  record was live at every authoritative nameserver and at Google ~11 minutes before the
+  server itself could resolve it. `certbot` runs on the server, so the server's view is the
+  one that matters. Check with `getent hosts <domain>`, not `dig` from your laptop.
 
 ---
 
@@ -254,7 +263,8 @@ is why a weak key like `devkey` is tolerated here and nowhere else.
 
 **Verify:** `curl -s localhost:8787/v1/health` → `{"status":"ok"}`
 
-Status page: <http://localhost:8787> (enter the key).
+Status page: <http://localhost:8787> (enter the key). Every relay serves this at its own root
+URL — see [Checking status](#checking-status).
 
 ### 2B: Private network (recommended for real use)
 
@@ -275,10 +285,11 @@ is refused by the bridge — terminate TLS or keep the relay on loopback.
 > **Agents: get explicit human approval before this step** (or confirm your instructions
 > already authorise it). Read [SECURITY.md](SECURITY.md) first.
 >
-> ⚠️ **This section has never been run end-to-end.** Let's Encrypt issuance requires a real
-> domain and public DNS, which cannot be tested locally. The compose config is validated and
-> the relay's own guards are tested; the certificate path is not. Verify every step rather
-> than assuming it worked.
+> ✅ **This has been run end-to-end against a real domain** — cert issued, HTTPS serving,
+> `"tls":true` confirmed, a real job returned structured JSON, and a 90s long-poll survived
+> the proxy. The two things that bit us are called out in the coverage table above (shared
+> rate limits, and a cloud resolver lagging public DNS). Still verify every step: your DNS,
+> ports and proxy are not ours.
 
 **You need, before starting:**
 
@@ -431,6 +442,54 @@ your CLI subscription → back.
 | Nothing after ~90s | Bridge claimed it but the CLI hung | `relayent-bridge monitor` and watch the log panel |
 
 ---
+
+## Checking status
+
+Once it is running, two live views:
+
+**The relay's web dashboard** — open the relay's own URL in a browser and enter your pairing
+key. Works for any relay, not just localhost:
+
+```
+https://relay.example.com          # or http://localhost:8787
+```
+
+Shows relay health and uptime, whether a bridge is online, pending jobs, and each backend's
+readiness — auto-refreshing every 5s. Its **Security** card grades the deployment: if it reads
+*"NO — traffic is in the clear"*, the relay is network-reachable without TLS. Fix that before
+using it for anything real. The key stays in the page and is only ever sent to the relay's
+own `/v1` API.
+
+The page shows your key's 8-char **fingerprint**, never the key. It matches
+`relayent-bridge config list` — that is how you confirm both sides hold the same key.
+
+**The bridge's terminal dashboard** — on the machine running the bridge:
+
+```bash
+relayent-bridge monitor      # Ctrl-C to quit
+```
+
+Connection, polling state, backends, and a live tail of recent jobs, refreshed every 2s.
+Colour turns off automatically when piped. It never prints the key, so it is safe to
+screenshot.
+
+**Logs:**
+
+```bash
+tail -f ~/.relayent/logs/bridge.err.log     # job activity
+journalctl --user -u relayent-bridge -f     # Linux
+```
+
+⚠️ Activity is in `bridge.err.log`, **not** `bridge.out.log` — Go's logger writes to stderr.
+An empty `bridge.out.log` is normal, not a fault.
+
+**Over the API**, from anywhere with the key:
+
+```bash
+curl -s $RELAY/v1/status              -H "Authorization: Bearer $KEY"   # health, tls, fingerprint
+curl -s $RELAY/v1/bridge/online       -H "Authorization: Bearer $KEY"   # {"online":true}
+curl -s $RELAY/v1/bridge/capabilities -H "Authorization: Bearer $KEY"   # ready backends
+```
 
 ## Configuring
 
