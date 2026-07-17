@@ -36,7 +36,7 @@ relay reading a schema its code no longer understands.
 | 5 | `phase-5-enroll` ✅ | `POST /v1/enroll` (one-time token → bridge credential); `setup` accepts a token or a key. | Code revert safe (`git reset --hard phase-4-machine-auth`). Already-issued bridge credentials stop being accepted; re-run `setup` with the legacy key. |
 | 6 | `phase-6-target-user` ✅ | `EnqueueRequest.TargetUser` + `routeTarget` (per-user routing, anti-spoof guard). | Code revert safe (`git reset --hard phase-5-enroll`). Additive field; old clients omit it and self-route. |
 | 7 | `phase-7-admin` ✅ | `/v1/admin/*` API (users, enroll-tokens, app-creds, activity) + bootstrap admin token. HTML dashboard deferred. | Code revert safe (`git reset --hard phase-6-target-user`). Remove `RELAYENT_ADMIN_TOKEN`. No new persisted state. |
-| 8 | `phase-8-audit` *(pending)* | Audit table + no-content boundary. | Code revert safe. `audit` table becomes orphaned; drop it if desired. |
+| 8 | `phase-8-audit` ✅ | Append-only audit log; `GET /v1/admin/audit`; structural no-content boundary (proven at file level). | Code revert safe (`git reset --hard phase-7-admin`). Orphaned audit bucket is harmless. |
 | 9 | `phase-9-compat` *(pending)* | Legacy migration docs; SECURITY.md posture update. | Docs only. Trivially revertible. |
 
 ## Note: SQLite → bbolt (phase 2)
