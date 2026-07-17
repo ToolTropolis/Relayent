@@ -140,6 +140,22 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
+// EnrollRequest is the body of POST /v1/enroll — a bridge redeeming a one-time
+// enrollment token (issued by an admin for a specific user) to obtain its own
+// long-lived credential. The token is the only authentication; the endpoint is
+// otherwise unauthenticated and rate-limited.
+type EnrollRequest struct {
+	Token string `json:"token"` // the one-time enrollment token
+}
+
+// EnrollResponse returns the bridge's newly issued credential. The full
+// "<id>.<secret>" is shown ONCE and never recoverable — the relay stores only a
+// hash. The bridge must save it (it replaces the pairing key).
+type EnrollResponse struct {
+	BridgeCredential string `json:"bridge_credential"` // "<id>.<secret>" — save this now
+	UserEmail        string `json:"user_email"`        // who this bridge is bound to (for confirmation)
+}
+
 // CancelResponse is returned by DELETE /v1/jobs/{id}.
 //
 // Cancelled reports whether anything was actually stopped, and WasStatus says

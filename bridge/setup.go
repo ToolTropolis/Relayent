@@ -147,6 +147,40 @@ func validateRelayURL(raw string) error {
 	}
 }
 
+// tryEnroll attempts to redeem value as a one-time enrollment token at the
+// relay's POST /v1/enroll. On success it returns the issued bridge credential
+// (which the caller saves in place of the token) and the bound user's email.
+//
+// ok is false — with no error surfaced — when the value is not an enrollment
+// token: a plain pairing key or an already-issued credential yields a 401/404
+// here, which simply means "not a token, use it as-is". Only a clean success
+// swaps the value. This keeps single-key setup working unchanged.
+func tryEnroll(relayURL, value string) (credential, email string, ok bool) {
+	body, _ := json.Marshal(map[string]string{"token": value})
+	req, err := http.NewRequest("POST", strings.TrimRight(relayURL, "/")+"/v1/enroll",
+		strings.NewReader(string(body)))
+	if err != nil {
+		return "", "", false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return "", "", false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", false // not a token; caller uses the value as-is
+	}
+	var out struct {
+		BridgeCredential string `json:"bridge_credential"`
+		UserEmail        string `json:"user_email"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || out.BridgeCredential == "" {
+		return "", "", false
+	}
+	return out.BridgeCredential, out.UserEmail, true
+}
+
 // probeRelay checks the relay is reachable and the key is accepted, so setup
 // fails at pairing time rather than silently at the first job.
 func probeRelay(relayURL, key string) error {
@@ -251,9 +285,9 @@ func RunSetup() error {
 
 	key := strings.TrimSpace(existing["RELAYENT_PAIRING_KEY"])
 	for {
-		prompt := "  Pairing key (from the relay operator): "
+		prompt := "  Pairing key or enrollment token (from your relay admin): "
 		if key != "" {
-			prompt = fmt.Sprintf("  Pairing key [keep existing %s]: ", maskKey(key))
+			prompt = fmt.Sprintf("  Pairing key/token [keep existing %s]: ", maskKey(key))
 		}
 		fmt.Print(prompt)
 		line, err := in.ReadString('\n')
@@ -264,10 +298,19 @@ func RunSetup() error {
 			key = v
 		}
 		if key == "" {
-			fmt.Println("  A pairing key is required.")
+			fmt.Println("  A pairing key or enrollment token is required.")
 			continue
 		}
 		break
+	}
+
+	// A multi-tenant relay hands out one-time ENROLLMENT TOKENS, not keys. If this
+	// value redeems as one, swap it for the bridge credential the relay issues —
+	// that credential (bound to this user) is what we save. A plain pairing key
+	// or an already-issued credential is not a token and passes through unchanged.
+	if cred, email, ok := tryEnroll(relayURL, key); ok {
+		fmt.Printf("  ✓ Enrolled as %s\n", email)
+		key = cred
 	}
 
 	fmt.Println()

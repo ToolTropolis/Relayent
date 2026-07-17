@@ -165,6 +165,10 @@ func main() {
 	mux.HandleFunc("GET /v1/bridge/capabilities", srv.auth(srv.getCapabilities))
 	mux.HandleFunc("POST /v1/bridge/capabilities", srv.auth(srv.postCapabilities))
 
+	// Enrollment: a bridge redeems a one-time token for its credential. The token
+	// is the auth, so this route is unauthenticated (but rate-limited + one-time).
+	mux.HandleFunc("POST /v1/enroll", srv.enroll)
+
 	// OIDC human login (only when configured). Unauthenticated by design — these
 	// ARE the authentication flow.
 	if srv.oidc != nil {
@@ -350,6 +354,64 @@ func (s *server) machinePrincipal(id, secret string) *Principal {
 
 func (s *server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// enroll redeems a one-time enrollment token and issues the bridge its own
+// credential. The token IS the authentication (an admin issued it for a specific
+// user), so this endpoint is otherwise unauthenticated — but rate-limited per IP
+// and one-time, so a leaked or guessed token is single-use and slow to brute.
+//
+// The returned "<id>.<secret>" credential is shown ONCE; the relay stores only
+// its hash. On success the bridge is permanently bound to the token's user.
+func (s *server) enroll(w http.ResponseWriter, r *http.Request) {
+	if !s.store.Enabled() {
+		writeErr(w, http.StatusNotFound, "enrollment is not enabled on this relay")
+		return
+	}
+	// Rate-limit like auth: a token is a credential, guessing it must be slow.
+	ip := clientIP(r, s.trustProxy)
+	if !s.authLimit.allow(ip) {
+		writeErr(w, http.StatusTooManyRequests, "too many attempts; slow down")
+		return
+	}
+
+	var req api.EnrollRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Token) == "" {
+		writeErr(w, http.StatusBadRequest, "token is required")
+		return
+	}
+
+	// Redeem is atomic and one-time; a used/expired/unknown token all fail here.
+	userSub, err := s.store.RedeemEnrollToken(hashSecret(req.Token))
+	if err != nil {
+		// Do not distinguish unknown / expired / used — all are "invalid token".
+		writeErr(w, http.StatusUnauthorized, "invalid or expired enrollment token")
+		return
+	}
+	user, err := s.store.GetUser(userSub)
+	if err != nil || user.Disabled {
+		writeErr(w, http.StatusForbidden, "the user for this token is not active")
+		return
+	}
+
+	full, id, credHash, err := newMachineCredential()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not issue credential")
+		return
+	}
+	if err := s.store.PutBinding(BridgeBinding{
+		BridgeID: id, UserSub: userSub, CredHash: credHash,
+	}); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not record binding")
+		return
+	}
+	writeJSON(w, http.StatusOK, api.EnrollResponse{
+		BridgeCredential: full,
+		UserEmail:        user.Email,
+	})
 }
 
 func (s *server) enqueue(w http.ResponseWriter, r *http.Request, p *Principal) {
