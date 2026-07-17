@@ -1,0 +1,91 @@
+# Relayent relay — deploy behind an EXISTING reverse proxy (multi-tenant).
+#
+# Primary author: Navjyot Nishant
+# Created on: 2026-07-17
+# Description: Runs the relay as its OWN compose stack, decoupled from the app
+#   it serves. Use this when a reverse proxy (nginx/Apache) already terminates
+#   TLS on the host — the relay does not run its own Caddy. The proxy reaches the
+#   relay by container name over `relayent-network`; the proxy's own service must
+#   also join that network (external: true). This is the standalone counterpart
+#   to deploy/docker-compose.yml (which bundles Caddy for a fresh host).
+#
+#   Multi-tenant: RELAYENT_DATA_DIR enables the stateful control plane (users,
+#   enrollment, admin, audit) on a persistent volume. The legacy pairing key,
+#   if set, keeps working alongside it — so an existing single-key integration is
+#   never interrupted.
+#
+# QUICK START
+#   1. cp .env.behind-proxy.example .env   # set the pairing key + admin token
+#   2. Ensure your reverse proxy's service joins `relayent-network`
+#      (external network; create it once: `docker network create relayent-network`)
+#   3. Point the proxy vhost at http://relayent-relay:8787
+#   4. docker compose -f docker-compose.behind-proxy.yml up -d
+
+services:
+  # One-shot: a fresh named volume is root-owned, but the relay runs as uid 65532
+  # (nonroot). Chown the data dir once so the read-only relay can write its store.
+  # Exits after; the relay waits for it via depends_on.
+  relayent-data-init:
+    image: busybox:1.36
+    command: ["chown", "-R", "65532:65532", "/data"]
+    volumes:
+      - relayent-data:/data
+    restart: "no"
+    networks: [relayent-network]
+
+  relayent-relay:
+    # Build the image on the host first (Relayent is a separate repo):
+    #   git clone https://github.com/ToolTropolis/Relayent.git /tmp/relayent
+    #   docker build -f /tmp/relayent/relay/Dockerfile -t relayent-relay:latest /tmp/relayent
+    image: relayent-relay:latest
+    pull_policy: never
+    container_name: relayent-relay
+    environment:
+      RELAYENT_LISTEN: ':8787'
+      # Legacy pairing key — keeps an existing single-key integration working
+      # during migration to per-user credentials. Optional; remove once every
+      # client has moved to enrollment. In .env, never inline.
+      RELAYENT_PAIRING_KEY: ${RELAYENT_PAIRING_KEY:-}
+      # Multi-tenant control plane (users, enrollment, admin, audit) on /data.
+      RELAYENT_DATA_DIR: /data
+      # Bootstrap admin token: grants admin scope directly. >=24 chars or the
+      # relay refuses to start when network-reachable. Remove once a real OIDC
+      # admin exists. In .env, never inline.
+      RELAYENT_ADMIN_TOKEN: ${RELAYENT_ADMIN_TOKEN:-}
+      # The proxy terminates TLS and is trusted, so honour its X-Forwarded-*.
+      RELAYENT_TRUST_PROXY: '1'
+      # OIDC (optional, added after its live flow is verified against a real
+      # OAuth client). All-or-nothing; leave unset to run token/legacy auth only.
+      RELAYENT_OIDC_ISSUER: ${RELAYENT_OIDC_ISSUER:-}
+      RELAYENT_OIDC_CLIENT_ID: ${RELAYENT_OIDC_CLIENT_ID:-}
+      RELAYENT_OIDC_CLIENT_SECRET: ${RELAYENT_OIDC_CLIENT_SECRET:-}
+      RELAYENT_OIDC_REDIRECT_URL: ${RELAYENT_OIDC_REDIRECT_URL:-}
+      RELAYENT_OIDC_HOSTED_DOMAIN: ${RELAYENT_OIDC_HOSTED_DOMAIN:-}
+    volumes:
+      - relayent-data:/data       # control-plane store (users, hashed creds, audit)
+    depends_on:
+      relayent-data-init:
+        condition: service_completed_successfully
+    networks: [relayent-network]
+    # No `ports:` — reachable only via the proxy on relayent-network, so TLS
+    # cannot be bypassed by hitting the relay directly.
+    security_opt:
+      - no-new-privileges:true
+    read_only: true               # rootfs read-only; only the /data volume is writable
+    cap_drop:
+      - ALL
+    restart: always
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+networks:
+  # External so the reverse proxy (which lives in another compose) can join it.
+  # Create once on the host: `docker network create relayent-network`.
+  relayent-network:
+    external: true
+    name: relayent-network
+
+volumes:
+  relayent-data:
+    name: relayent-data
