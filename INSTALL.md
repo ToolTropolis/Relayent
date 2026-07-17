@@ -748,6 +748,35 @@ nothing". Restart after changes:
 relayent-bridge uninstall && relayent-bridge install
 ```
 
+### Environment variable reference
+
+Every variable, for both components. Environment always overrides the config file. The bridge's
+common settings are also editable with `relayent-bridge config set` (see the table above); the
+rest are environment-only.
+
+**Relay**
+
+| Variable | Default | Description |
+|---|---|---|
+| `RELAYENT_LISTEN` | `:8787` | Listen address. `127.0.0.1:8787` = localhost-only (safest). |
+| `RELAYENT_PAIRING_KEY` | — | Accepted key(s), comma-separated (`new,old` during rotation). Required, ≥24 chars, when network-reachable. |
+| `RELAYENT_TRUST_PROXY` | `0` | Set `1` only behind a reverse proxy you control; honours `X-Forwarded-For`/`-Proto`. |
+| `RELAYENT_ALLOW_INSECURE` | `0` | Set `1` to bypass the key requirement on a network-reachable relay. Only when auth is enforced upstream. |
+
+**Bridge**
+
+| Variable | Default | Description |
+|---|---|---|
+| `RELAYENT_RELAY_URL` | — | Relay base URL. Required. `https://` required off-localhost. |
+| `RELAYENT_PAIRING_KEY` | — | Your pairing key. Required. A credential — keep it secret. |
+| `RELAYENT_WORKSPACE` | `~/.relayent/workspace` | Directory jobs run in. Default is an empty sandbox — widen only deliberately. |
+| `RELAYENT_POLL_WAIT` | `25` | Seconds to hold each long-poll open. |
+| `RELAYENT_JOB_TIMEOUT` | `180` | Max seconds per CLI invocation. |
+| `RELAYENT_CLAUDE_BIN` | `claude` | Override the Claude CLI path. |
+| `RELAYENT_CODEX_BIN` | `codex` | Override the Codex CLI path. |
+| `RELAYENT_CURSOR_BIN` | `cursor-agent` | Override the Cursor CLI path. |
+| `RELAYENT_GEMINI_BIN` | `gemini` | Override the Gemini CLI path (adapter is a stub). |
+
 ### The workspace
 
 Jobs run in `~/.relayent/workspace`, an **empty** directory — not your home folder. This is
