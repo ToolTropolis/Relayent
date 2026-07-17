@@ -44,8 +44,27 @@ type oidcAuth struct {
 	verifier     *oidc.IDTokenVerifier
 	oauth        *oauth2.Config
 	hostedDomain string // if set, only accounts in this Workspace domain (hd claim) are accepted
+	providerName string // friendly issuer name for the UI, e.g. "Google"
 	sessionKey   []byte // HMAC key for signing session cookies
 	store        *Store
+}
+
+// providerName maps a known issuer URL to a friendly name for the login button,
+// so it says "Sign in with Google" rather than a vague "SSO". Falls back to
+// "SSO" for issuers we do not specifically recognise — truthful for any provider.
+func providerName(issuer string) string {
+	switch {
+	case strings.Contains(issuer, "accounts.google.com"):
+		return "Google"
+	case strings.Contains(issuer, "login.microsoftonline.com"), strings.Contains(issuer, "sts.windows.net"):
+		return "Microsoft"
+	case strings.Contains(issuer, "okta.com"):
+		return "Okta"
+	case strings.Contains(issuer, "auth0.com"):
+		return "Auth0"
+	default:
+		return "SSO"
+	}
 }
 
 // sessionCookie is the cookie name for a logged-in human session.
@@ -97,6 +116,7 @@ func setupOIDC(ctx context.Context, store *Store) (*oidcAuth, error) {
 		provider:     provider,
 		verifier:     provider.Verifier(&oidc.Config{ClientID: clientID}),
 		hostedDomain: os.Getenv("RELAYENT_OIDC_HOSTED_DOMAIN"),
+		providerName: providerName(issuer),
 		sessionKey:   sessionKey,
 		store:        store,
 		oauth: &oauth2.Config{

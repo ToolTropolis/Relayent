@@ -41,7 +41,27 @@ func (s *server) adminPage(w http.ResponseWriter, r *http.Request) {
 			"connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(strings.Replace(adminHTML, "%NONCE%", nonce, 1)))
+
+	// The SSO button reflects the ACTUAL configured provider ("Sign in with
+	// Google"), and is hidden entirely when OIDC is off — otherwise it would be a
+	// dead button that 404s. Only the token field shows in that case.
+	ssoBlock := ""
+	if s.oidc != nil {
+		ssoBlock = `<a href="/v1/auth/login"><button>Sign in with ` +
+			htmlEscape(s.oidc.providerName) + `</button></a>`
+	}
+
+	page := strings.Replace(adminHTML, "%NONCE%", nonce, 1)
+	page = strings.Replace(page, "%SSO_BUTTON%", ssoBlock, 1)
+	_, _ = w.Write([]byte(page))
+}
+
+// htmlEscape is a minimal escaper for the one interpolated value (the provider
+// name), which comes from a known allowlist but is escaped anyway on principle —
+// untrusted-looking data never reaches HTML unescaped in this codebase.
+func htmlEscape(s string) string {
+	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;")
+	return r.Replace(s)
 }
 
 const adminHTML = `<!doctype html>
@@ -112,10 +132,10 @@ const adminHTML = `<!doctype html>
 
   <div id="authcard" class="card" style="display:none">
     <h2>Sign in</h2>
-    <p class="muted">You are not authenticated as an admin. Sign in with your identity provider,
-    or paste the bootstrap admin token.</p>
+    <p class="muted">You are not authenticated as an admin. Sign in with your identity
+    provider, or paste the bootstrap admin token.</p>
     <div class="row">
-      <a href="/v1/auth/login"><button>Sign in with SSO</button></a>
+      %SSO_BUTTON%
       <input id="tok" class="grow" type="password" placeholder="or paste RELAYENT_ADMIN_TOKEN"
         autocomplete="off">
       <button id="usetok" class="ghost">Use token</button>
