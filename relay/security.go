@@ -110,6 +110,51 @@ func checkKey(presented, configured string) bool {
 	return subtle.ConstantTimeCompare([]byte(presented), []byte(configured)) == 1
 }
 
+// --- machine credentials (bridge + app) ---
+
+// A machine credential is "<id>.<secret>": the id is public and locates the
+// stored record; the secret is verified against a stored sha256 hash. Splitting
+// them lets the relay find the right record in O(1) without scanning, while
+// never storing the secret — a stolen store yields only useless hashes.
+
+// newMachineCredential mints a credential, returning the full "<id>.<secret>"
+// to hand out ONCE, and the sha256(secret) to store. The id is 12 bytes and the
+// secret 32 bytes of crypto-random, both base64url.
+func newMachineCredential() (full, id, secretHash string, err error) {
+	idBytes := make([]byte, 12)
+	secretBytes := make([]byte, 32)
+	if _, err = rand.Read(idBytes); err != nil {
+		return "", "", "", fmt.Errorf("generate credential id: %w", err)
+	}
+	if _, err = rand.Read(secretBytes); err != nil {
+		return "", "", "", fmt.Errorf("generate credential secret: %w", err)
+	}
+	id = base64.RawURLEncoding.EncodeToString(idBytes)
+	secret := base64.RawURLEncoding.EncodeToString(secretBytes)
+	return id + "." + secret, id, hashSecret(secret), nil
+}
+
+// splitCredential parses "<id>.<secret>"; ok is false if malformed.
+func splitCredential(cred string) (id, secret string, ok bool) {
+	id, secret, ok = strings.Cut(cred, ".")
+	if !ok || id == "" || secret == "" {
+		return "", "", false
+	}
+	return id, secret, true
+}
+
+// hashSecret returns the base64url sha256 of a credential secret. This is what
+// is stored; the raw secret never is.
+func hashSecret(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+// verifySecret constant-time compares a presented secret against a stored hash.
+func verifySecret(presentedSecret, storedHash string) bool {
+	return subtle.ConstantTimeCompare([]byte(hashSecret(presentedSecret)), []byte(storedHash)) == 1
+}
+
 // --- key rotation ---
 
 // KeySet is the set of pairing keys a relay accepts. Rotation without downtime

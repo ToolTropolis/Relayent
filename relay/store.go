@@ -77,6 +77,38 @@ const (
 	RoleUser  = "user"
 )
 
+// AppCred is a credential issued to a server-side consumer (e.g. EngageHub). It
+// authenticates the app and is scoped; the app names a target user per request.
+// KeyHash is sha256 of the secret half — the raw secret is shown once at
+// issuance and never stored.
+type AppCred struct {
+	ID        string    `json:"id"`       // public half; locates the record
+	AppID     string    `json:"app_id"`   // human label, e.g. "engagehub"
+	KeyHash   string    `json:"key_hash"` // sha256(secret); NEVER the raw secret
+	Scopes    []string  `json:"scopes"`
+	Revoked   bool      `json:"revoked"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// BridgeBinding ties a bridge to exactly one user. A bridge presenting its
+// credential is authenticated (CredHash) and resolved to UserSub — the only
+// user whose jobs it may claim.
+type BridgeBinding struct {
+	BridgeID   string    `json:"bridge_id"` // public half of the bridge credential
+	UserSub    string    `json:"user_sub"`  // the bound user
+	CredHash   string    `json:"cred_hash"` // sha256(secret); NEVER the raw secret
+	EnrolledAt time.Time `json:"enrolled_at"`
+	LastSeen   time.Time `json:"last_seen"`
+}
+
+// EnrollToken is a one-time token an admin issues so a specific user's bridge
+// can enrol. Stored under sha256(token); redeemed exactly once before expiry.
+type EnrollToken struct {
+	UserSub    string    `json:"user_sub"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	RedeemedAt time.Time `json:"redeemed_at"` // zero until redeemed
+}
+
 // OpenStore opens (and initialises) the bbolt control-plane store at path.
 // It never returns a nil store with a nil error.
 func OpenStore(path string) (*Store, error) {
@@ -209,6 +241,154 @@ func (s *Store) SetUserDisabled(sub string, disabled bool) error {
 		u.Disabled = disabled
 		return b.Put([]byte(sub), mustJSON(u))
 	})
+}
+
+// --- app credentials ---
+
+// PutAppCred stores an issued app credential (KeyHash already computed by the
+// caller — the store never sees the raw secret).
+func (s *Store) PutAppCred(c AppCred) error {
+	if !s.Enabled() {
+		return nil
+	}
+	if c.CreatedAt.IsZero() {
+		c.CreatedAt = time.Now()
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(bktAppCreds).Put([]byte(c.ID), mustJSON(c))
+	})
+}
+
+// GetAppCred returns an app credential by its public id, or ErrNotFound.
+func (s *Store) GetAppCred(id string) (AppCred, error) {
+	if !s.Enabled() {
+		return AppCred{}, ErrNotFound
+	}
+	var c AppCred
+	err := s.db.View(func(tx *bolt.Tx) error {
+		v := tx.Bucket(bktAppCreds).Get([]byte(id))
+		if v == nil {
+			return ErrNotFound
+		}
+		return json.Unmarshal(v, &c)
+	})
+	return c, err
+}
+
+// --- bridge bindings ---
+
+// PutBinding stores a bridge→user binding (CredHash already computed by caller).
+func (s *Store) PutBinding(b BridgeBinding) error {
+	if !s.Enabled() {
+		return nil
+	}
+	if b.EnrolledAt.IsZero() {
+		b.EnrolledAt = time.Now()
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(bktBindings).Put([]byte(b.BridgeID), mustJSON(b))
+	})
+}
+
+// GetBinding returns a bridge binding by bridge id, or ErrNotFound.
+func (s *Store) GetBinding(bridgeID string) (BridgeBinding, error) {
+	if !s.Enabled() {
+		return BridgeBinding{}, ErrNotFound
+	}
+	var b BridgeBinding
+	err := s.db.View(func(tx *bolt.Tx) error {
+		v := tx.Bucket(bktBindings).Get([]byte(bridgeID))
+		if v == nil {
+			return ErrNotFound
+		}
+		return json.Unmarshal(v, &b)
+	})
+	return b, err
+}
+
+// TouchBinding records that a bridge was last seen now — best-effort presence.
+// A failure here must not fail a job, so callers ignore its error.
+func (s *Store) TouchBinding(bridgeID string) error {
+	if !s.Enabled() {
+		return nil
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket(bktBindings)
+		v := bkt.Get([]byte(bridgeID))
+		if v == nil {
+			return nil
+		}
+		var b BridgeBinding
+		if err := json.Unmarshal(v, &b); err != nil {
+			return err
+		}
+		b.LastSeen = time.Now()
+		return bkt.Put([]byte(bridgeID), mustJSON(b))
+	})
+}
+
+// ListBindingsForUser returns all bridges bound to a user — for the admin view.
+func (s *Store) ListBindingsForUser(sub string) ([]BridgeBinding, error) {
+	if !s.Enabled() {
+		return nil, nil
+	}
+	var out []BridgeBinding
+	err := s.db.View(func(tx *bolt.Tx) error {
+		return tx.Bucket(bktBindings).ForEach(func(_, v []byte) error {
+			var b BridgeBinding
+			if err := json.Unmarshal(v, &b); err != nil {
+				return err
+			}
+			if b.UserSub == sub {
+				out = append(out, b)
+			}
+			return nil
+		})
+	})
+	return out, err
+}
+
+// --- enrollment tokens ---
+
+// PutEnrollToken stores a one-time token under tokenHash (sha256 of the token).
+func (s *Store) PutEnrollToken(tokenHash string, tok EnrollToken) error {
+	if !s.Enabled() {
+		return nil
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(bktEnroll).Put([]byte(tokenHash), mustJSON(tok))
+	})
+}
+
+// RedeemEnrollToken atomically checks and consumes a one-time token. It returns
+// the bound user on success, or an error if the token is unknown, expired, or
+// already redeemed. The redeem is a single write transaction, so two concurrent
+// redemptions cannot both succeed.
+func (s *Store) RedeemEnrollToken(tokenHash string) (userSub string, err error) {
+	if !s.Enabled() {
+		return "", ErrNotFound
+	}
+	err = s.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket(bktEnroll)
+		v := bkt.Get([]byte(tokenHash))
+		if v == nil {
+			return ErrNotFound
+		}
+		var tok EnrollToken
+		if err := json.Unmarshal(v, &tok); err != nil {
+			return err
+		}
+		if !tok.RedeemedAt.IsZero() {
+			return errors.New("enrollment token already used")
+		}
+		if time.Now().After(tok.ExpiresAt) {
+			return errors.New("enrollment token expired")
+		}
+		tok.RedeemedAt = time.Now()
+		userSub = tok.UserSub
+		return bkt.Put([]byte(tokenHash), mustJSON(tok))
+	})
+	return userSub, err
 }
 
 // --- helpers ---

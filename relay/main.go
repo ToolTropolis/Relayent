@@ -269,11 +269,13 @@ func (s *server) authorize(scope string, next func(http.ResponseWriter, *http.Re
 
 // authenticate resolves a request to a Principal, or nil if unauthenticated.
 // Schemes are tried in order of specificity:
-//  1. OIDC session cookie → a human (admin/user) principal (when OIDC is on)
-//  2. Bearer pairing key → a legacy principal (single shared namespace)
+//  1. OIDC session cookie      → a human (admin/user) principal
+//  2. Bearer machine credential → a bridge or app principal (shape "<id>.<secret>")
+//  3. Bearer pairing key        → a legacy principal (single shared namespace)
 //
-// Later phases add app-key and bridge-credential bearer schemes here; each just
-// produces a richer Principal, and nothing downstream changes.
+// A machine credential always contains a ".", which a pairing key never does, so
+// the two bearer schemes are unambiguous. Each scheme just yields a richer
+// Principal; nothing downstream changes.
 func (s *server) authenticate(r *http.Request) *Principal {
 	// A logged-in human, via the session cookie.
 	if s.oidc != nil {
@@ -282,19 +284,66 @@ func (s *server) authenticate(r *http.Request) *Principal {
 		}
 	}
 
-	// Bearer pairing key (legacy / single-tenant).
-	key := keyFromRequest(r)
-	if key == "" {
+	bearer := keyFromRequest(r)
+	if bearer == "" {
 		return nil
 	}
+
+	// A relay-issued machine credential ("<id>.<secret>"), when a store exists.
+	if s.store.Enabled() {
+		if id, secret, ok := splitCredential(bearer); ok {
+			if p := s.machinePrincipal(id, secret); p != nil {
+				return p
+			}
+			// A dotted bearer that is not a valid credential is a failure — do
+			// NOT fall through to the pairing key (which never contains a dot).
+			return nil
+		}
+	}
+
+	// Bearer pairing key (legacy / single-tenant).
 	if s.keys.Empty() {
 		// Loopback open-namespace: each distinct key is its own namespace.
-		p := legacyPrincipal(keyFingerprint(key))
-		p.UserID = key // preserve prior per-key isolation
+		p := legacyPrincipal(keyFingerprint(bearer))
+		p.UserID = bearer // preserve prior per-key isolation
 		return p
 	}
-	if s.keys.Accepts(key) {
-		return legacyPrincipal(keyFingerprint(key))
+	if s.keys.Accepts(bearer) {
+		return legacyPrincipal(keyFingerprint(bearer))
+	}
+	return nil
+}
+
+// machinePrincipal resolves a machine credential to a bridge or app principal,
+// or nil. A bridge credential (its id is a known binding) is scoped to claim its
+// bound user's jobs; an app credential is scoped as issued and routes by the
+// target user named in each request (added in a later phase). The disabled/
+// revoked checks make revocation take effect on the very next request.
+func (s *server) machinePrincipal(id, secret string) *Principal {
+	// Bridge credential?
+	if b, err := s.store.GetBinding(id); err == nil {
+		if !verifySecret(secret, b.CredHash) {
+			return nil
+		}
+		if u, err := s.store.GetUser(b.UserSub); err != nil || u.Disabled {
+			return nil
+		}
+		_ = s.store.TouchBinding(id) // best-effort presence
+		return &Principal{
+			UserID: b.UserSub, Kind: KindUserBridge,
+			Scopes: []string{ScopeClaim}, KeyFP: keyFingerprint(id),
+		}
+	}
+	// App credential?
+	if c, err := s.store.GetAppCred(id); err == nil {
+		if c.Revoked || !verifySecret(secret, c.KeyHash) {
+			return nil
+		}
+		return &Principal{
+			// UserID is set per-request from the target user (later phase); until
+			// then an app principal has no default namespace of its own.
+			Kind: KindApp, Scopes: c.Scopes, KeyFP: keyFingerprint(id),
+		}
 	}
 	return nil
 }
