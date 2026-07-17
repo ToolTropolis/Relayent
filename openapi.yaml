@@ -11,6 +11,11 @@ info:
     result back. All requests authenticate with a per-tenant bearer "pairing key";
     every job is scoped to that key.
 
+    Two deployment models: SINGLE-KEY (one shared pairing key, stateless) and
+    MULTI-TENANT (RELAYENT_DATA_DIR + OIDC: per-user identity, isolation, admin).
+    The endpoints under /v1/auth, /v1/enroll and /v1/admin exist only in the
+    multi-tenant model.
+
     Typical consumer flow:
       1. GET  /v1/bridge/online   -> fail fast if no bridge is polling
       2. POST /v1/jobs            -> { job_id }
@@ -92,6 +97,77 @@ paths:
                   status: { type: string, example: recorded }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/enroll:
+    post:
+      summary: Redeem a one-time enrollment token for a bridge credential (multi-tenant)
+      description: |
+        A bridge redeems an admin-issued one-time token to obtain its own
+        long-lived credential, bound to the token's user. The token IS the
+        authentication, so this endpoint is otherwise unauthenticated (but
+        rate-limited and one-time). The returned credential is shown ONCE.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EnrollRequest" }
+      responses:
+        "200":
+          description: Bridge credential issued (once)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnrollResponse" }
+        "401": { description: Invalid, expired, or already-used token }
+        "404": { description: Enrollment not enabled (no store) }
+        "429": { $ref: "#/components/responses/Unauthorized" }
+  /v1/admin/users:
+    get:
+      summary: List users with per-user activity — NO content (admin)
+      responses:
+        "200": { description: Users + activity (no prompt/result content) }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Not an admin }
+    post:
+      summary: Create or pre-provision a user (admin)
+      responses:
+        "201": { description: Created }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Not an admin }
+  /v1/admin/enroll-tokens:
+    post:
+      summary: Mint a one-time enrollment token for a user (admin)
+      responses:
+        "200":
+          description: The one-time token (shown once)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnrollTokenResponse" }
+        "403": { description: Not an admin }
+  /v1/admin/app-creds:
+    get:
+      summary: List app credentials — ids + metadata, NO secrets (admin)
+      responses:
+        "200": { description: App credentials without secrets/hashes }
+        "403": { description: Not an admin }
+    post:
+      summary: Issue an app credential — secret shown once (admin)
+      responses:
+        "200":
+          description: The app credential (secret shown once)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreateAppCredResponse" }
+        "403": { description: Not an admin }
+  /v1/admin/audit:
+    get:
+      summary: Recent audit events — per-user history, NO content (admin)
+      description: |
+        Append-only audit log: who did what, when, which backend, success/
+        failure, and byte-LENGTHS — never prompt or result content. Optional
+        query params user=<sub> and limit=<n>.
+      responses:
+        "200": { description: Audit events (no content) }
+        "403": { description: Not an admin }
   /v1/jobs:
     post:
       summary: Enqueue an AI job for the user's local bridge
@@ -231,6 +307,12 @@ components:
           description: Optional JSON Schema; when set the bridge requests structured JSON.
           type: object
           additionalProperties: true
+        target_user:
+          type: string
+          description: |
+            Multi-tenant only. Routes the job to a specific user's bridge. Required
+            for an app credential serving many users; ignored for a bridge/legacy
+            principal, which route to themselves.
     EnqueueResponse:
       type: object
       properties:
@@ -336,6 +418,26 @@ components:
           enum: [pending, running, done, error]
           description: What the job was doing when the cancel arrived. `running` means the work was already underway and cannot be recalled.
         detail: { type: string, description: "Human-readable explanation of the outcome" }
+    EnrollRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, description: The one-time enrollment token }
+    EnrollResponse:
+      type: object
+      properties:
+        bridge_credential: { type: string, description: "<id>.<secret>; shown once, save it" }
+        user_email: { type: string, description: The user this bridge is bound to }
+    EnrollTokenResponse:
+      type: object
+      properties:
+        token: { type: string, description: One-time token; shown once }
+        expires_at: { type: string, format: date-time }
+    CreateAppCredResponse:
+      type: object
+      properties:
+        app_id: { type: string }
+        credential: { type: string, description: "<id>.<secret>; shown once, save it" }
     ErrorResponse:
       type: object
       properties:

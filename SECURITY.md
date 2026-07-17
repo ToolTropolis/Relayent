@@ -110,8 +110,69 @@ writes via `ProtectSystem=strict`; macOS has no equivalent applied here.
 checksums yet. `install.sh` builds from source when it can, precisely because that is
 the path you can actually verify.
 
-**The relay is not multi-tenant-safe in the strong sense.** Namespacing by key stops
-accidental crossover, not a determined attacker who has a key.
+---
+
+## Two deployment models
+
+Relayent runs in one of two modes, with different security properties. **Everything above
+describes the single-key model. If you run the multi-tenant model, read the next section too.**
+
+- **Single-key (stateless).** One shared `RELAYENT_PAIRING_KEY`, no database, nothing at rest.
+  The original model — simplest, and the relay is a stateless bastion. Right for one person or
+  one trusted app.
+- **Multi-tenant (stateful).** Configured with `RELAYENT_DATA_DIR` (and usually OIDC). Many
+  users, each on their own subscription, isolated by identity. The relay gains a database and
+  therefore a different, larger threat surface — covered below.
+
+---
+
+## Multi-tenant model — the changed threat model
+
+Enabling `RELAYENT_DATA_DIR` makes the relay **stateful**. This is a deliberate trade: the
+relay stops being a stateless bastion and becomes a small identity broker with state at rest.
+Know exactly what that means before you deploy it publicly.
+
+**What the relay now stores (and what it does not).** The on-disk store holds a **non-secret
+user directory** (OIDC subject, email, name, role) and **hashed** machine credentials (bridge
+and app). It holds **no passwords** — OIDC means the relay never receives one — and **no prompt
+or result content**, ever: that is enforced structurally, and verified down to grepping the
+database file. A stolen store file therefore yields a list of users and some useless SHA-256
+hashes, not working credentials and not anyone's data. That is a real reduction in blast radius
+versus a password database — but it is still more than the stateless model's *nothing*.
+
+**Identity is OIDC; the relay trusts your provider.** Humans (admins, users) authenticate via
+OIDC (Google, or any issuer). The relay verifies the id_token signature locally and trusts the
+claims. Consequences: your OIDC provider is now in your trust boundary, and if you set
+`RELAYENT_OIDC_HOSTED_DOMAIN` you should — otherwise any Google account can attempt login (they
+still need to be a known user to do anything, but lock the domain if you have one).
+
+**The bootstrap admin token is a skeleton key.** `RELAYENT_ADMIN_TOKEN` grants full admin
+scope — it can mint enrollment tokens and app credentials for any user. Treat it like the
+pairing key: strong (the relay enforces ≥24 chars when network-reachable), secret, and ideally
+removed once a real OIDC admin exists. Anyone holding it owns the control plane.
+
+**Machine credentials are bearer secrets, per identity.** A bridge credential is bound to one
+user and can only claim that user's jobs; an app credential can enqueue for any user it names.
+So a leaked **app** credential is higher-value than a leaked bridge credential — it can spend
+any user's quota. Scope app credentials tightly and revoke promptly (`/v1/admin/app-creds/{id}/revoke`).
+
+**Isolation is enforced, and tested — but it is authorization, not encryption.** A bridge
+cannot claim, read, cancel, or enqueue for another user (proven by tests, including the
+anti-spoofing guard). But the relay process still sees every prompt and result in memory in the
+clear, for every user. Multi-tenant isolation stops users reaching *each other's* jobs; it does
+not hide anything from the relay operator, who could read process memory. There is no
+end-to-end encryption. Do not send prompts you would not want the relay operator to see.
+
+**The admin is an operator, not an observer.** The admin surface shows per-user *activity* —
+job counts, backends, bridge presence, timing — but **never prompt or result content**. That
+boundary is structural (the audit type has no content field) and verified. An admin manages the
+system; they do not get to read what users asked. If you need admins to see content, that is a
+feature you would have to add deliberately, and it would be a significant privacy change worth
+stating loudly.
+
+**Per-user revocation now exists** (it did not in the single-key model): disable a user, or
+revoke an app credential, and it takes effect on the next request. But there is still no way to
+revoke *one* holder of a shared credential — shared credentials remain all-or-nothing.
 
 ---
 
