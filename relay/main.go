@@ -197,6 +197,7 @@ func main() {
 	mux.HandleFunc("GET /v1/admin/app-creds", srv.authorize(ScopeAdmin, srv.adminListAppCreds))
 	mux.HandleFunc("POST /v1/admin/app-creds", srv.authorize(ScopeAdmin, srv.adminCreateAppCred))
 	mux.HandleFunc("POST /v1/admin/app-creds/{id}/revoke", srv.authorize(ScopeAdmin, srv.adminRevokeAppCred))
+	mux.HandleFunc("GET /v1/admin/audit", srv.authorize(ScopeAdmin, srv.adminAudit))
 
 	mux.HandleFunc("GET /", srv.statusPage)
 
@@ -440,6 +441,9 @@ func (s *server) enroll(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not record binding")
 		return
 	}
+	_ = s.store.Append(AuditEvent{
+		ActorSub: userSub, Event: EvEnroll, TargetSub: userSub,
+	})
 	writeJSON(w, http.StatusOK, api.EnrollResponse{
 		BridgeCredential: full,
 		UserEmail:        user.Email,
@@ -482,6 +486,11 @@ func (s *server) enqueue(w http.ResponseWriter, r *http.Request, p *Principal) {
 		Prompt:     req.Prompt,
 		System:     req.System,
 		JSONSchema: req.JSONSchema,
+	})
+	// Audit: IDs, backend, model, and the prompt's LENGTH — never the prompt.
+	_ = s.store.Append(AuditEvent{
+		ActorSub: p.UserID, Event: EvEnqueue, JobID: id, TargetSub: target,
+		Backend: req.Backend, Model: req.Model, PromptLen: len(req.Prompt),
 	})
 	writeJSON(w, http.StatusAccepted, api.EnqueueResponse{JobID: id})
 }
@@ -543,7 +552,29 @@ func (s *server) postResult(w http.ResponseWriter, r *http.Request, p *Principal
 		writeErr(w, http.StatusNotFound, "unknown job for this identity")
 		return
 	}
+	// Audit: the result's outcome + LENGTH — never the result text/json.
+	status := api.StatusDone
+	if !res.OK {
+		status = api.StatusError
+	}
+	_ = s.store.Append(AuditEvent{
+		ActorSub: p.UserID, Event: EvResult, JobID: id, TargetSub: p.UserID,
+		Status: status, ResultLen: len(res.Text) + jsonLen(res.JSON),
+	})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
+}
+
+// jsonLen returns the serialised byte length of a value, for audit metrics. It
+// returns only a COUNT — the bytes are computed and discarded.
+func jsonLen(v any) int {
+	if v == nil {
+		return 0
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return 0
+	}
+	return len(b)
 }
 
 func (s *server) fetch(w http.ResponseWriter, r *http.Request, p *Principal) {

@@ -432,6 +432,81 @@ func (s *Store) RedeemEnrollToken(tokenHash string) (userSub string, err error) 
 	return userSub, err
 }
 
+// --- audit log ---
+
+// AuditEvent is one entry in the append-only audit log. Its fields are IDs,
+// enums, and bounded counters — there is DELIBERATELY no field through which a
+// prompt or result could pass. "No content at rest" is a property of this type,
+// not of discipline at the call site: you physically cannot log content because
+// there is nowhere to put it.
+type AuditEvent struct {
+	Seq       uint64    `json:"seq"`
+	TS        time.Time `json:"ts"`
+	ActorSub  string    `json:"actor_sub"`  // who acted (user/app/admin id)
+	Event     string    `json:"event"`      // enqueue | claim | result | cancel | enroll | admin_action
+	JobID     string    `json:"job_id"`     // opaque id, never content
+	TargetSub string    `json:"target_sub"` // whose namespace it affected
+	Backend   string    `json:"backend"`    // e.g. "cursor"
+	Model     string    `json:"model"`      // e.g. "auto"
+	Status    string    `json:"status"`     // done | error | ""
+	PromptLen int       `json:"prompt_len"` // BYTE COUNT only — never the bytes
+	ResultLen int       `json:"result_len"` // BYTE COUNT only — never the bytes
+}
+
+// Audit events.
+const (
+	EvEnqueue = "enqueue"
+	EvClaim   = "claim"
+	EvResult  = "result"
+	EvCancel  = "cancel"
+	EvEnroll  = "enroll"
+	EvAdmin   = "admin_action"
+)
+
+// Append writes an audit event with a monotonic sequence. Best-effort: audit
+// must never fail a job, so callers ignore the error (but it is returned for
+// tests). The append is a single write transaction.
+func (s *Store) Append(e AuditEvent) error {
+	if !s.Enabled() {
+		return nil
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket(bktAudit)
+		seq, _ := bkt.NextSequence()
+		e.Seq = seq
+		if e.TS.IsZero() {
+			e.TS = time.Now()
+		}
+		return bkt.Put(itob(seq), mustJSON(e))
+	})
+}
+
+// RecentAudit returns up to limit newest audit events, optionally filtered to a
+// target user (empty = all). For the admin activity/history view.
+func (s *Store) RecentAudit(targetSub string, limit int) ([]AuditEvent, error) {
+	if !s.Enabled() {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	var out []AuditEvent
+	err := s.db.View(func(tx *bolt.Tx) error {
+		cur := tx.Bucket(bktAudit).Cursor()
+		for k, v := cur.Last(); k != nil && len(out) < limit; k, v = cur.Prev() {
+			var e AuditEvent
+			if err := json.Unmarshal(v, &e); err != nil {
+				return err
+			}
+			if targetSub == "" || e.TargetSub == targetSub {
+				out = append(out, e)
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
 // --- helpers ---
 
 // mustJSON marshals a value that is known to be serialisable (our own structs);

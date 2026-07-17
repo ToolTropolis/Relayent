@@ -16,6 +16,7 @@ package main
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -148,6 +149,24 @@ func (s *server) adminListAppCreds(w http.ResponseWriter, r *http.Request, p *Pr
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"app_creds": creds})
+}
+
+// adminAudit returns the recent audit log — per-user history without content.
+// Optional ?user=<sub> filters to one user; ?limit=<n> bounds the count.
+func (s *server) adminAudit(w http.ResponseWriter, r *http.Request, p *Principal) {
+	user := r.URL.Query().Get("user")
+	limit := 0
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	events, err := s.store.RecentAudit(user, limit)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not read audit log")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": events})
 }
 
 // adminRevokeAppCred revokes an app credential by its public id.
