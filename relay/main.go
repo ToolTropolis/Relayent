@@ -21,6 +21,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -54,6 +55,7 @@ var Version = "1.0.0"
 type server struct {
 	q          *Queue
 	keys       KeySet // accepted pairing keys (primary + retiring); empty = any key
+	store      *Store // control-plane persistence; nil = legacy no-persistence mode
 	startedAt  time.Time
 	authLimit  *limiter // guards credential guessing (keyed by client IP)
 	jobLimit   *limiter // guards job floods / quota burn (keyed by key fingerprint)
@@ -111,9 +113,28 @@ func main() {
 		log.Fatalf("[relayent-relay] %v", err)
 	}
 
+	// Control-plane persistence is opt-in. With no RELAYENT_DATA_DIR the store is
+	// nil and the relay runs exactly as before — no database, no disk state —
+	// which is what the live single-key deployment does. Multi-tenant features
+	// (users, enrollment, admin) require a store; without one they are simply
+	// unavailable and the legacy pairing key remains the only auth.
+	var store *Store
+	if dir := os.Getenv("RELAYENT_DATA_DIR"); dir != "" {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			log.Fatalf("[relayent-relay] create data dir: %v", err)
+		}
+		s, err := OpenStore(filepath.Join(dir, "relayent.db"))
+		if err != nil {
+			log.Fatalf("[relayent-relay] %v", err)
+		}
+		store = s
+		defer store.Close()
+	}
+
 	srv := &server{
 		q:          NewQueue(jobTTL, onlineWindow),
 		keys:       keys,
+		store:      store,
 		startedAt:  time.Now(),
 		authLimit:  newLimiter(authRatePerSec, authBurst),
 		jobLimit:   newLimiter(jobRatePerSec, jobBurst),
