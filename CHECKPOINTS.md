@@ -30,7 +30,7 @@ relay reading a schema its code no longer understands.
 | Phase | Tag | Adds | Reverting costs / cleanup |
 |---|---|---|---|
 | 1 | `phase-1-principal` | `Principal` type; Queue re-keyed `key`→`userID`; auth middleware → `*Principal`. Pure refactor. | **Nothing to clean up.** Zero behaviour change, no state, no new deps. `git reset --hard main` fully undoes it. |
-| 2 | `phase-2-store` *(pending)* | SQLite control-plane store (`modernc.org/sqlite`); writable `relay_data` volume; new Go dependency. | Code revert is safe. **Also delete the volume** (`docker volume rm relay_data`) and remove the dep from `go.mod`. Nothing in production reads it yet, so no data loss risk. |
+| 2 | `phase-2-store` ✅ | **bbolt** control-plane store (`go.etcd.io/bbolt` — NOT sqlite; see note); opt-in via `RELAYENT_DATA_DIR`. | Code revert is safe (`git reset --hard phase-1-principal`). **Also** `go mod tidy` to drop bbolt, and delete `$RELAYENT_DATA_DIR` / the `relay_data` volume. Nothing in production reads it (nil store in legacy mode), so no data-loss risk. |
 | 3 | `phase-3-oidc` *(pending)* | OIDC login (`go-oidc`), session, admin gate. | Code revert safe. Remove OIDC env/config; delete the `go-oidc` dep. No schema change beyond phase 2's `users` table. |
 | 4 | `phase-4-machine-auth` *(pending)* | Hashed bridge + app credentials. | Code revert safe. Rows in `app_creds`/`bridge_bindings` become orphaned — harmless, or drop the tables. |
 | 5 | `phase-5-enroll` *(pending)* | `POST /v1/enroll`; bridge setup enrollment. | Code revert safe. Already-enrolled bridges fall back to the legacy key path (still supported). |
@@ -38,6 +38,14 @@ relay reading a schema its code no longer understands.
 | 7 | `phase-7-admin` *(pending)* | `/v1/admin/*` + admin dashboard. | Code revert safe. No new persisted state beyond phases 2/4. |
 | 8 | `phase-8-audit` *(pending)* | Audit table + no-content boundary. | Code revert safe. `audit` table becomes orphaned; drop it if desired. |
 | 9 | `phase-9-compat` *(pending)* | Legacy migration docs; SECURITY.md posture update. | Docs only. Trivially revertible. |
+
+## Note: SQLite → bbolt (phase 2)
+
+The plan named `modernc.org/sqlite` (pure-Go SQLite). It was tried and abandoned: its pure-Go
+libc emulation blocked indefinitely in the build/test environment (a 1-second test took 10
+minutes wall-clock). Switched to `go.etcd.io/bbolt` — also pure Go, no cgo/libc, battle-tested
+(etcd's storage engine), and the same tests run in ~1s. The store interface and every security
+property (hashes only, no content at rest) are unchanged; only the engine differs.
 
 ## Invariant held at every checkpoint
 
