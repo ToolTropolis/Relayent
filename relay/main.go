@@ -419,12 +419,6 @@ func (s *server) enqueue(w http.ResponseWriter, r *http.Request, p *Principal) {
 		writeErr(w, http.StatusForbidden, "this credential may not enqueue jobs")
 		return
 	}
-	// Limit per identity, not per IP: the cost being protected is the target
-	// user's subscription quota, bound to the user regardless of caller origin.
-	if !s.jobLimit.allow(p.UserID) {
-		writeErr(w, http.StatusTooManyRequests, "job rate limit exceeded")
-		return
-	}
 	var req api.EnqueueRequest
 	if !decode(w, r, &req) {
 		return
@@ -433,8 +427,23 @@ func (s *server) enqueue(w http.ResponseWriter, r *http.Request, p *Principal) {
 		writeErr(w, http.StatusBadRequest, "backend and prompt are required")
 		return
 	}
+
+	// Resolve which user's bridge this job routes to.
+	target, err := s.routeTarget(p, req.TargetUser)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Limit per target user, not per IP: the cost being protected is that user's
+	// subscription quota, bound to the user regardless of which app called.
+	if !s.jobLimit.allow(target) {
+		writeErr(w, http.StatusTooManyRequests, "job rate limit exceeded")
+		return
+	}
+
 	id := newID()
-	s.q.Enqueue(p.UserID, id, api.Job{
+	s.q.Enqueue(target, id, api.Job{
 		ID:         id,
 		Backend:    req.Backend,
 		Model:      req.Model,
@@ -443,6 +452,35 @@ func (s *server) enqueue(w http.ResponseWriter, r *http.Request, p *Principal) {
 		JSONSchema: req.JSONSchema,
 	})
 	writeJSON(w, http.StatusAccepted, api.EnqueueResponse{JobID: id})
+}
+
+// routeTarget decides which user's namespace a job enqueues into, and enforces
+// that a principal cannot enqueue for a user it isn't allowed to:
+//
+//   - App principal (KindApp, no own UserID): MUST name target_user, which must
+//     be an existing, enabled user. This is how one app serves many users.
+//   - Bridge / legacy / OIDC principal (has its own UserID): routes to itself.
+//     A target_user is accepted only if it equals its own id — naming a DIFFERENT
+//     user is rejected, so a bridge credential can never spend another's quota.
+func (s *server) routeTarget(p *Principal, targetUser string) (string, error) {
+	targetUser = strings.TrimSpace(targetUser)
+
+	if p.Kind == KindApp {
+		if targetUser == "" {
+			return "", fmt.Errorf("target_user is required for an app credential")
+		}
+		u, err := s.store.GetUser(targetUser)
+		if err != nil || u.Disabled {
+			return "", fmt.Errorf("target_user is not a known active user")
+		}
+		return targetUser, nil
+	}
+
+	// Self-routing principals: an explicit target must match, or be omitted.
+	if targetUser != "" && targetUser != p.UserID {
+		return "", fmt.Errorf("this credential may only enqueue for itself")
+	}
+	return p.UserID, nil
 }
 
 func (s *server) claimNext(w http.ResponseWriter, r *http.Request, p *Principal) {

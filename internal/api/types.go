@@ -28,6 +28,12 @@ type EnqueueRequest struct {
 	Prompt     string `json:"prompt"`                // the user/content prompt
 	System     string `json:"system,omitempty"`      // optional system instruction
 	JSONSchema any    `json:"json_schema,omitempty"` // optional JSON Schema for structured output
+
+	// TargetUser routes the job to a specific user's bridge/subscription. Required
+	// for an app credential serving many users; ignored for a bridge or legacy
+	// principal, which already carry their own identity. It is the OIDC subject of
+	// the target user (as an app learns from the admin/user directory).
+	TargetUser string `json:"target_user,omitempty"`
 }
 
 // EnqueueResponse is returned by POST /v1/jobs.
