@@ -200,6 +200,7 @@ func main() {
 	mux.HandleFunc("POST /v1/admin/app-creds", srv.authorize(ScopeAdmin, srv.adminCreateAppCred))
 	mux.HandleFunc("POST /v1/admin/app-creds/{id}/revoke", srv.authorize(ScopeAdmin, srv.adminRevokeAppCred))
 	mux.HandleFunc("GET /v1/admin/audit", srv.authorize(ScopeAdmin, srv.adminAudit))
+	mux.HandleFunc("GET /v1/admin/config", srv.authorize(ScopeAdmin, srv.adminConfig))
 
 	// The admin dashboard (multi-tenant only). The page itself is public HTML —
 	// it authenticates its /v1/admin/* XHRs via the OIDC session cookie or a

@@ -44,6 +44,7 @@ type oidcAuth struct {
 	verifier     *oidc.IDTokenVerifier
 	oauth        *oauth2.Config
 	hostedDomain string // if set, only accounts in this Workspace domain (hd claim) are accepted
+	issuer       string // OIDC issuer URL (shown read-only in the Configure view)
 	providerName string // friendly issuer name for the UI, e.g. "Google"
 	sessionKey   []byte // HMAC key for signing session cookies
 	store        *Store
@@ -116,6 +117,7 @@ func setupOIDC(ctx context.Context, store *Store) (*oidcAuth, error) {
 		provider:     provider,
 		verifier:     provider.Verifier(&oidc.Config{ClientID: clientID}),
 		hostedDomain: os.Getenv("RELAYENT_OIDC_HOSTED_DOMAIN"),
+		issuer:       issuer,
 		providerName: providerName(issuer),
 		sessionKey:   sessionKey,
 		store:        store,

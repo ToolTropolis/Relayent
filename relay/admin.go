@@ -16,6 +16,7 @@ package main
 
 import (
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -206,6 +207,31 @@ func (s *server) adminAudit(w http.ResponseWriter, r *http.Request, p *Principal
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"events": events})
+}
+
+// adminConfig returns a read-only snapshot of the relay's effective config for
+// the Configure view. It exposes NO secrets — only booleans for whether each
+// secret is set, plus non-secret identifiers (issuer, client id, redirect). The
+// values are env/compose-driven; the UI shows them but cannot change them.
+func (s *server) adminConfig(w http.ResponseWriter, r *http.Request, p *Principal) {
+	cfg := api.AdminConfig{
+		Version:       Version,
+		Listen:        envDefault("RELAYENT_LISTEN", ":8787"),
+		TrustProxy:    s.trustProxy,
+		StoreEnabled:  s.store.Enabled(),
+		DataDir:       os.Getenv("RELAYENT_DATA_DIR"),
+		PairingKeySet: !s.keys.Empty(),
+		AdminTokenSet: s.adminToken != "",
+		OIDCEnabled:   s.oidc != nil,
+	}
+	if s.oidc != nil {
+		cfg.OIDCIssuer = s.oidc.issuer
+		cfg.OIDCClientID = s.oidc.oauth.ClientID
+		cfg.OIDCRedirect = s.oidc.oauth.RedirectURL
+		cfg.OIDCProvider = s.oidc.providerName
+		cfg.HostedDomain = s.oidc.hostedDomain
+	}
+	writeJSON(w, http.StatusOK, cfg)
 }
 
 // adminRevokeAppCred revokes an app credential by its public id.

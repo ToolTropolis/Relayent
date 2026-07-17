@@ -195,6 +195,29 @@ type CreateAppCredResponse struct {
 	Credential string `json:"credential"` // "<id>.<secret>" — save this now
 }
 
+// AdminConfig is a read-only snapshot of the relay's effective configuration,
+// shown in the admin dashboard's Configure view. Secrets are NEVER included —
+// only whether they are set, and non-secret identifiers (issuer, client id).
+// These values are env/compose-driven; changing them means editing the relay's
+// .env and running `docker compose up -d`, not a UI write.
+type AdminConfig struct {
+	Version      string `json:"version"`
+	Listen       string `json:"listen"`        // bind address, e.g. ":8787"
+	TrustProxy   bool   `json:"trust_proxy"`   // honours X-Forwarded-* from a trusted proxy
+	StoreEnabled bool   `json:"store_enabled"` // multi-tenant control plane on /data
+	DataDir      string `json:"data_dir"`      // where the store lives, if enabled
+
+	PairingKeySet bool `json:"pairing_key_set"` // legacy shared key still accepted (value never shown)
+	AdminTokenSet bool `json:"admin_token_set"` // bootstrap admin bearer configured
+
+	OIDCEnabled  bool   `json:"oidc_enabled"`
+	OIDCIssuer   string `json:"oidc_issuer,omitempty"`    // non-secret
+	OIDCClientID string `json:"oidc_client_id,omitempty"` // non-secret (public identifier)
+	OIDCRedirect string `json:"oidc_redirect,omitempty"`  // non-secret
+	OIDCProvider string `json:"oidc_provider,omitempty"`  // friendly name, e.g. "Google"
+	HostedDomain string `json:"hosted_domain,omitempty"`  // Workspace lock, if any
+}
+
 // ErrorResponse is the uniform error envelope for 4xx/5xx responses.
 type ErrorResponse struct {
 	Error string `json:"error"`
