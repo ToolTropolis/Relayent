@@ -926,3 +926,87 @@ Rules for the report:
 - [README.md](README.md) — what Relayent is, the API, integrating an app
 - [SECURITY.md](SECURITY.md) — threat model, and **what Relayent does not protect against**
 - [openapi.yaml](openapi.yaml) — the `/v1` contract, the only integration surface
+
+
+## Multi-user (multi-tenant) mode
+
+By default a relay uses one shared pairing key — fine for one person or one trusted app. To let
+**many users each use their own subscription**, isolated from one another, enable the
+multi-tenant control plane. This makes the relay **stateful** (a database) — read
+[SECURITY.md's multi-tenant section](SECURITY.md#multi-tenant-model-the-changed-threat-model)
+first; the threat model changes.
+
+### Enable it
+
+```bash
+RELAYENT_DATA_DIR=/var/lib/relayent \           # persistence (users, bindings, audit)
+RELAYENT_ADMIN_TOKEN=<strong-token> \           # bootstrap admin (>=24 chars; keygen)
+RELAYENT_PAIRING_KEY=<existing-key> \           # keep for a no-downtime migration (below)
+  relayent-relay
+```
+
+For real human admins (recommended), also configure OIDC — the first person to log in becomes
+admin:
+
+```bash
+RELAYENT_OIDC_ISSUER=https://accounts.google.com \
+RELAYENT_OIDC_CLIENT_ID=... RELAYENT_OIDC_CLIENT_SECRET=... \
+RELAYENT_OIDC_REDIRECT_URL=https://relay.example.com/v1/auth/callback \
+RELAYENT_OIDC_HOSTED_DOMAIN=yourcompany.com      # lock to your Workspace domain
+```
+
+### Onboard a user
+
+```bash
+ADMIN="Authorization: Bearer $RELAYENT_ADMIN_TOKEN"     # or an OIDC admin session
+
+# 1. Create the user (or they appear on first OIDC login)
+curl -sXPOST $RELAY/v1/admin/users -H "$ADMIN" -d '{"sub":"alice","email":"alice@co.com"}'
+
+# 2. Mint a one-time enrollment token, send it to Alice out-of-band
+curl -sXPOST $RELAY/v1/admin/enroll-tokens -H "$ADMIN" -d '{"user_sub":"alice"}'
+# -> {"token":"...", "expires_at":"..."}
+
+# 3. Alice runs setup with the TOKEN (not a key); her bridge redeems it:
+#      relayent-bridge setup     # paste the relay URL + the enrollment token
+```
+
+Her bridge is now bound to her, and only her jobs route to it.
+
+### Onboard an app (e.g. EngageHub)
+
+```bash
+curl -sXPOST $RELAY/v1/admin/app-creds -H "$ADMIN" -d '{"app_id":"engagehub"}'
+# -> {"credential":"<id>.<secret>"}   # save it; shown once
+```
+
+The app authenticates with that credential and names `target_user` per job:
+
+```bash
+curl -sXPOST $RELAY/v1/jobs -H "Authorization: Bearer <app-credential>" \
+  -d '{"backend":"cursor","prompt":"...","target_user":"alice"}'
+```
+
+The job runs on **Alice's** subscription. A different `target_user` routes to that user instead.
+
+### Migrating a live single-key relay — no downtime
+
+The legacy pairing key keeps working the whole time, so migrate gradually:
+
+1. Add `RELAYENT_DATA_DIR` + `RELAYENT_ADMIN_TOKEN` (+ OIDC) to the running relay, keeping
+   `RELAYENT_PAIRING_KEY`. Existing key-based clients are unaffected.
+2. Create users and enroll their bridges (above). Each migrated bridge moves off the shared key.
+3. Migrate apps to app credentials with `target_user`.
+4. Once nothing uses the shared key, remove `RELAYENT_PAIRING_KEY`.
+
+This mirrors the key-rotation overlap: old and new auth coexist until you drop the old.
+
+### Admin visibility
+
+```bash
+curl -s $RELAY/v1/admin/users -H "$ADMIN"    # per-user job counts, bridge presence
+curl -s $RELAY/v1/admin/audit -H "$ADMIN"    # history: who/when/backend/status — NO content
+```
+
+The admin sees *activity*, never prompt or result content — that boundary is structural.
+

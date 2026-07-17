@@ -78,6 +78,22 @@ Otherwise any caller forges them to bypass rate limits or fake `tls:true`.
 
 ---
 
+**9. Multi-tenant isolation is authorization, and it is tested.** Jobs route by `Principal.UserID`
+only. A bridge principal may claim/return only its bound user's jobs; an app principal must name
+a `target_user` and cannot self-route; a self-routing principal (bridge/legacy/OIDC) may NOT
+enqueue for a different user (the anti-spoof guard in `routeTarget`). Do not weaken these — the
+cross-tenant tests in `queue_test.go`/`route_test.go` are the proof.
+
+**10. No prompt/result content is ever at rest.** The control-plane store (`store.go`) holds
+identity, hashed credentials, and audit metadata only. `AuditEvent` has byte-LENGTH fields
+(`PromptLen`/`ResultLen`), never the bytes. If you add a field to any stored struct, it must not
+be able to hold content — a test greps the DB file to prove it.
+
+**11. Credentials are stored hashed, never raw.** OIDC means no password at rest. Machine
+credentials are `<id>.<secret>`; only `sha256(secret)` is stored, compared constant-time
+(`verifySecret`). The bootstrap admin token is a skeleton key — enforce the ≥24-char floor on a
+network-reachable relay.
+
 ## House style
 
 **Comments explain *why*, never *what*.** The code shows what. A comment earns its place by
