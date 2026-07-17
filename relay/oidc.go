@@ -219,7 +219,15 @@ func (a *oidcAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.setSession(w, idToken.Subject)
-	http.Redirect(w, r, "/admin", http.StatusFound)
+
+	// Redirect by effective role. UpsertUser preserves an existing user's role, so
+	// re-read it rather than trusting the bootstrap `role` computed above: an admin
+	// lands on the console, a regular user on their own status page.
+	dest := "/"
+	if u, err := a.store.GetUser(idToken.Subject); err == nil && u.Role == RoleAdmin {
+		dest = "/admin"
+	}
+	http.Redirect(w, r, dest, http.StatusFound)
 }
 
 // handleLogout clears the session cookie.

@@ -35,6 +35,19 @@ func (s *server) adminPage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "admin is not enabled on this relay")
 		return
 	}
+	// Route by session, server-side, so the console is a clean destination:
+	//   - a signed-in admin gets the console,
+	//   - a signed-in NON-admin is sent to their own status page (/),
+	//   - a visitor with NO OIDC session still gets the console HTML, because the
+	//     bootstrap admin authenticates by pasting RELAYENT_ADMIN_TOKEN (a
+	//     client-side XHR bearer, not a session) — its boot() probe then either
+	//     shows the console or, on 401/403, redirects to /login.
+	if s.oidc != nil {
+		if p := s.oidc.principalFromSession(r); p != nil && !p.Can(ScopeAdmin) {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+	}
 	nonce, err := scriptNonce()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
@@ -46,17 +59,9 @@ func (s *server) adminPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 
-	// The SSO button reflects the ACTUAL configured provider ("Sign in with
-	// Google"), and is hidden entirely when OIDC is off — otherwise it would be a
-	// dead button that 404s. Only the token field shows in that case.
-	ssoBlock := ""
-	if s.oidc != nil {
-		ssoBlock = `<a href="/v1/auth/login"><button>Sign in with ` +
-			htmlEscape(s.oidc.providerName) + `</button></a>`
-	}
-
+	// Sign-in lives on /login now; the console renders only for an admin (an OIDC
+	// admin session, or a bootstrap token adopted from /login's #token hand-off).
 	page := strings.Replace(adminHTML, "%NONCE%", nonce, 1)
-	page = strings.Replace(page, "%SSO_BUTTON%", ssoBlock, 1)
 	_, _ = w.Write([]byte(page))
 }
 
@@ -197,23 +202,7 @@ const adminHTML = `<!doctype html>
 </head>
 <body>
 
-<!-- Sign-in shell (shown until an admin session/token is available). -->
-<div id="signin" class="signwrap" style="display:none">
-  <div class="card signcard">
-    <div class="mark"></div>
-    <h1 style="margin:0 0 .25rem;font-size:1.3rem">Relayent Admin</h1>
-    <p class="muted" style="margin:0 0 1.1rem">Sign in with your identity provider, or paste
-    the bootstrap admin token.</p>
-    <div id="banner-signin" class="banner"></div>
-    <div class="row">%SSO_BUTTON%</div>
-    <div class="row">
-      <input id="tok" class="grow" type="password" placeholder="or paste RELAYENT_ADMIN_TOKEN" autocomplete="off">
-      <button id="usetok" class="ghost">Use token</button>
-    </div>
-  </div>
-</div>
-
-<!-- App shell (shown once authenticated). -->
+<!-- App shell (shown once authenticated; unauthenticated visitors are sent to /login). -->
 <div id="shell" class="shell" style="display:none">
   <aside class="side">
     <div class="brand">
@@ -381,7 +370,11 @@ async function api(method, path, body) {
   const opt = {method, headers: headers(), credentials: "same-origin"};
   if (body) opt.body = JSON.stringify(body);
   const r = await fetch(path, opt);
-  if (r.status === 401 || r.status === 403) { showAuth(); throw new Error("unauthorized"); }
+  if (r.status === 401 || r.status === 403) {
+    // Not (or no longer) an admin here — /login is the single sign-in surface.
+    location.assign("/login?next=/admin");
+    throw new Error("unauthorized");
+  }
   if (!r.ok) {
     let m = r.status + "";
     try { m = (await r.json()).error || m; } catch (e) {}
@@ -390,8 +383,7 @@ async function api(method, path, body) {
   return r.status === 204 ? null : r.json();
 }
 
-function showAuth() { $("shell").style.display = "none"; $("signin").style.display = "flex"; }
-function showApp()  { $("signin").style.display = "none"; $("shell").style.display = "grid"; }
+function showApp() { $("shell").style.display = "grid"; }
 
 /* ---- view router ---- */
 const VIEWS = ["users","audit","status","enroll","settings","creds"];
@@ -620,20 +612,32 @@ $("addapp").onclick = async () => {
     $("appid").value = ""; showSecret("App credential for " + app_id, r.credential); loadApps(); }
   catch (e) { banner("Error: " + e.message, "bad"); }
 };
-$("usetok").onclick = () => { token = $("tok").value.trim(); $("tok").value = ""; boot(); };
-
 for (const b of document.querySelectorAll(".navlink"))
   b.onclick = () => go(b.dataset.view);
 window.addEventListener("hashchange", () => go(location.hash.slice(1)));
 
-/* boot: confirm we're an admin (a 401/403 flips to the sign-in shell), then show the app. */
+/* Pick up a bootstrap token handed over from /login via the URL fragment
+   (#token=...). The fragment is never sent to the server; we read it, keep the
+   token in memory only, and strip it from the address bar immediately. */
+function adoptTokenFromHash() {
+  const h = location.hash || "";
+  const m = h.match(/(?:^#|&)token=([^&]+)/);
+  if (m) {
+    token = decodeURIComponent(m[1]);
+    const cleaned = h.replace(/(?:^#|&)token=[^&]+/, "").replace(/^#&/, "#");
+    history.replaceState(null, "", location.pathname + location.search + (cleaned === "#" ? "" : cleaned));
+  }
+}
+
+/* boot: confirm we're an admin; a 401/403 sends us to /login. */
 async function boot() {
+  adoptTokenFromHash();
   try {
     await api("GET", "/v1/admin/users");
     showApp();
     $("whoami").textContent = "Signed in";
     go(location.hash.slice(1) || "users");
-  } catch (e) { if (e.message !== "unauthorized") banner("Error: " + e.message, "bad", "banner-signin"); }
+  } catch (e) { if (e.message !== "unauthorized") banner("Error: " + e.message, "bad"); }
 }
 boot();
 </script>

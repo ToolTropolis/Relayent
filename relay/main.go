@@ -207,6 +207,10 @@ func main() {
 	// pasted admin token, exactly as the status page does with the pairing key.
 	mux.HandleFunc("GET /admin", srv.adminPage)
 
+	// /login is the single human sign-in surface: OIDC button + bootstrap-token
+	// entry, redirecting by role on success. Multi-tenant only (guarded in-handler).
+	mux.HandleFunc("GET /login", srv.loginPage)
+
 	mux.HandleFunc("GET /", srv.statusPage)
 
 	// Explicit timeouts: the default zero-value server has none, leaving it open
