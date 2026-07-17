@@ -267,6 +267,7 @@ protect against](SECURITY.md#what-relayent-does-not-protect-against).
 
 | Document | What it covers |
 |---|---|
+| **[API.md](API.md)** | Integrating an app: every call, what the numbers mean, the traps, a runnable client, and a verification checklist |
 | **[INSTALL.md](INSTALL.md)** | Setup, start to finish: bridge, relay (localhost / private / public+TLS), verification, configuration, rotation, troubleshooting |
 | **[SECURITY.md](SECURITY.md)** | Threat model, the deploy guide, and **what Relayent does not protect against** |
 | **[AGENTS.md](AGENTS.md)** | Conventions and security invariants for AI agents working on this codebase |
