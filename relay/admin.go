@@ -83,6 +83,45 @@ func (s *server) adminSetUserDisabled(w http.ResponseWriter, r *http.Request, p 
 	writeJSON(w, http.StatusOK, map[string]any{"sub": sub, "disabled": disabled})
 }
 
+// adminSetUserRole grants or revokes admin. Body: {"role":"admin"|"user"}. This
+// is the only path that changes a role — a normal OIDC login can't self-promote,
+// since UpsertUser preserves an existing role. An admin cannot demote themselves,
+// so the deployment can't be locked out of its last admin by accident.
+func (s *server) adminSetUserRole(w http.ResponseWriter, r *http.Request, p *Principal) {
+	sub := r.PathValue("sub")
+	var req api.SetUserRoleRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	if req.Role != RoleAdmin && req.Role != RoleUser {
+		writeErr(w, http.StatusBadRequest, "role must be \"admin\" or \"user\"")
+		return
+	}
+	if sub == p.UserID && req.Role != RoleAdmin {
+		writeErr(w, http.StatusBadRequest, "an admin cannot demote themselves")
+		return
+	}
+	if err := s.store.SetUserRole(sub, req.Role); err != nil {
+		writeErr(w, http.StatusNotFound, "unknown user")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"sub": sub, "role": req.Role})
+}
+
+// adminDeleteUser removes a user record. An admin cannot delete themselves.
+func (s *server) adminDeleteUser(w http.ResponseWriter, r *http.Request, p *Principal) {
+	sub := r.PathValue("sub")
+	if sub == p.UserID {
+		writeErr(w, http.StatusBadRequest, "an admin cannot delete themselves")
+		return
+	}
+	if err := s.store.DeleteUser(sub); err != nil {
+		writeErr(w, http.StatusNotFound, "unknown user")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"sub": sub, "status": "deleted"})
+}
+
 // adminIssueEnrollToken mints a one-time enrollment token for a user. The admin
 // sends it to that user out-of-band; the user's bridge redeems it at /v1/enroll.
 func (s *server) adminIssueEnrollToken(w http.ResponseWriter, r *http.Request, p *Principal) {

@@ -165,6 +165,11 @@ type CreateUserRequest struct {
 	Role        string `json:"role,omitempty"` // "admin" | "user" (default user)
 }
 
+// SetUserRoleRequest grants or revokes admin for an existing user.
+type SetUserRoleRequest struct {
+	Role string `json:"role"` // "admin" | "user"
+}
+
 // EnrollTokenRequest asks the relay to mint a one-time enrollment token for a
 // user, which the admin sends to that user out-of-band.
 type EnrollTokenRequest struct {

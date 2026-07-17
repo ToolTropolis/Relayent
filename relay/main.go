@@ -193,6 +193,8 @@ func main() {
 	mux.HandleFunc("GET /v1/admin/users", srv.authorize(ScopeAdmin, srv.adminListUsers))
 	mux.HandleFunc("POST /v1/admin/users", srv.authorize(ScopeAdmin, srv.adminCreateUser))
 	mux.HandleFunc("POST /v1/admin/users/{sub}/disabled", srv.authorize(ScopeAdmin, srv.adminSetUserDisabled))
+	mux.HandleFunc("POST /v1/admin/users/{sub}/role", srv.authorize(ScopeAdmin, srv.adminSetUserRole))
+	mux.HandleFunc("DELETE /v1/admin/users/{sub}", srv.authorize(ScopeAdmin, srv.adminDeleteUser))
 	mux.HandleFunc("POST /v1/admin/enroll-tokens", srv.authorize(ScopeAdmin, srv.adminIssueEnrollToken))
 	mux.HandleFunc("GET /v1/admin/app-creds", srv.authorize(ScopeAdmin, srv.adminListAppCreds))
 	mux.HandleFunc("POST /v1/admin/app-creds", srv.authorize(ScopeAdmin, srv.adminCreateAppCred))

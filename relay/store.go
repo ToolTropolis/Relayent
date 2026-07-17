@@ -243,6 +243,47 @@ func (s *Store) SetUserDisabled(sub string, disabled bool) error {
 	})
 }
 
+// SetUserRole changes a user's role (admin|user). Unlike UpsertUser — which
+// preserves an existing role so a normal login can't self-promote — this is the
+// explicit, admin-only path to grant or revoke admin.
+func (s *Store) SetUserRole(sub, role string) error {
+	if !s.Enabled() {
+		return nil
+	}
+	if role != RoleAdmin && role != RoleUser {
+		return fmt.Errorf("invalid role %q", role)
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bktUsers)
+		v := b.Get([]byte(sub))
+		if v == nil {
+			return ErrNotFound
+		}
+		var u User
+		if err := json.Unmarshal(v, &u); err != nil {
+			return err
+		}
+		u.Role = role
+		return b.Put([]byte(sub), mustJSON(u))
+	})
+}
+
+// DeleteUser removes a user record. Their bridge bindings and app credentials
+// are not touched here — revoke those separately. Used to clean up a
+// mis-provisioned or test account.
+func (s *Store) DeleteUser(sub string) error {
+	if !s.Enabled() {
+		return nil
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bktUsers)
+		if b.Get([]byte(sub)) == nil {
+			return ErrNotFound
+		}
+		return b.Delete([]byte(sub))
+	})
+}
+
 // --- app credentials ---
 
 // PutAppCred stores an issued app credential (KeyHash already computed by the

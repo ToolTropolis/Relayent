@@ -30,6 +30,44 @@ func openTestStore(t *testing.T) *Store {
 	return s
 }
 
+// SetUserRole flips admin and back; UpsertUser must not clobber it afterwards.
+func TestSetUserRole(t *testing.T) {
+	s := openTestStore(t)
+	s.UpsertUser(User{Sub: "u1", Email: "u1@x.com"}) // defaults to RoleUser
+	if err := s.SetUserRole("u1", RoleAdmin); err != nil {
+		t.Fatalf("SetUserRole: %v", err)
+	}
+	if u, _ := s.GetUser("u1"); u.Role != RoleAdmin {
+		t.Fatalf("role = %q, want admin", u.Role)
+	}
+	// A later login (UpsertUser) must preserve the promoted role.
+	s.UpsertUser(User{Sub: "u1", Email: "u1@x.com"})
+	if u, _ := s.GetUser("u1"); u.Role != RoleAdmin {
+		t.Fatalf("UpsertUser clobbered role to %q", u.Role)
+	}
+	if err := s.SetUserRole("u1", "bogus"); err == nil {
+		t.Fatal("SetUserRole must reject an unknown role")
+	}
+	if err := s.SetUserRole("missing", RoleAdmin); err != ErrNotFound {
+		t.Fatalf("SetUserRole on missing user = %v, want ErrNotFound", err)
+	}
+}
+
+// DeleteUser removes the record; CountUsers reflects it.
+func TestDeleteUser(t *testing.T) {
+	s := openTestStore(t)
+	s.UpsertUser(User{Sub: "gone", Email: "g@x.com"})
+	if err := s.DeleteUser("gone"); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+	if _, err := s.GetUser("gone"); err != ErrNotFound {
+		t.Fatalf("deleted user still present: %v", err)
+	}
+	if err := s.DeleteUser("gone"); err != ErrNotFound {
+		t.Fatalf("second delete = %v, want ErrNotFound", err)
+	}
+}
+
 // A nil store must be a total no-op — this is legacy single-key mode, and every
 // call site relies on it so the pre-existing deployment needs no DB.
 func TestNilStoreIsSafeNoop(t *testing.T) {
