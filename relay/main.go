@@ -13,6 +13,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -54,8 +55,9 @@ var Version = "1.0.0"
 
 type server struct {
 	q          *Queue
-	keys       KeySet // accepted pairing keys (primary + retiring); empty = any key
-	store      *Store // control-plane persistence; nil = legacy no-persistence mode
+	keys       KeySet    // accepted pairing keys (primary + retiring); empty = any key
+	store      *Store    // control-plane persistence; nil = legacy no-persistence mode
+	oidc       *oidcAuth // human login via OIDC; nil = not configured
 	startedAt  time.Time
 	authLimit  *limiter // guards credential guessing (keyed by client IP)
 	jobLimit   *limiter // guards job floods / quota burn (keyed by key fingerprint)
@@ -131,10 +133,18 @@ func main() {
 		defer store.Close()
 	}
 
+	// OIDC human login is opt-in (RELAYENT_OIDC_*). nil when unconfigured, so the
+	// pairing key stays the only auth for the live deployment.
+	oidcAuth, err := setupOIDC(context.Background(), store)
+	if err != nil {
+		log.Fatalf("[relayent-relay] %v", err)
+	}
+
 	srv := &server{
 		q:          NewQueue(jobTTL, onlineWindow),
 		keys:       keys,
 		store:      store,
+		oidc:       oidcAuth,
 		startedAt:  time.Now(),
 		authLimit:  newLimiter(authRatePerSec, authBurst),
 		jobLimit:   newLimiter(jobRatePerSec, jobBurst),
@@ -154,6 +164,15 @@ func main() {
 	mux.HandleFunc("GET /v1/status", srv.auth(srv.status))
 	mux.HandleFunc("GET /v1/bridge/capabilities", srv.auth(srv.getCapabilities))
 	mux.HandleFunc("POST /v1/bridge/capabilities", srv.auth(srv.postCapabilities))
+
+	// OIDC human login (only when configured). Unauthenticated by design — these
+	// ARE the authentication flow.
+	if srv.oidc != nil {
+		mux.HandleFunc("GET /v1/auth/login", srv.oidc.handleLogin)
+		mux.HandleFunc("GET /v1/auth/callback", srv.oidc.handleCallback)
+		mux.HandleFunc("GET /v1/auth/logout", srv.oidc.handleLogout)
+	}
+
 	mux.HandleFunc("GET /", srv.statusPage)
 
 	// Explicit timeouts: the default zero-value server has none, leaving it open
@@ -249,10 +268,21 @@ func (s *server) authorize(scope string, next func(http.ResponseWriter, *http.Re
 }
 
 // authenticate resolves a request to a Principal, or nil if unauthenticated.
-// Phase 1: pairing-key only, mapping to a legacy principal. Open-namespace mode
-// (empty KeySet, loopback only) accepts any key, each its own legacy-kind
-// namespace keyed by the key itself so distinct keys stay isolated as before.
+// Schemes are tried in order of specificity:
+//  1. OIDC session cookie → a human (admin/user) principal (when OIDC is on)
+//  2. Bearer pairing key → a legacy principal (single shared namespace)
+//
+// Later phases add app-key and bridge-credential bearer schemes here; each just
+// produces a richer Principal, and nothing downstream changes.
 func (s *server) authenticate(r *http.Request) *Principal {
+	// A logged-in human, via the session cookie.
+	if s.oidc != nil {
+		if p := s.oidc.principalFromSession(r); p != nil {
+			return p
+		}
+	}
+
+	// Bearer pairing key (legacy / single-tenant).
 	key := keyFromRequest(r)
 	if key == "" {
 		return nil
