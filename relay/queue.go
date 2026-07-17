@@ -1,11 +1,16 @@
 // Primary author: Navjyot Nishant
 // Created on: 2026-07-16
 // Last updated: 2026-07-16
-// Description: In-memory, per-pairing-key job broker for the Relayent relay.
+// Description: In-memory, per-user job broker for the Relayent relay. Every map
 //
-//	Supports enqueue, long-poll claim by a bridge, result posting, result
-//	fetching, and bridge-presence tracking (drives fail-fast). TTL-expires
-//	orphaned jobs. Redis is the intended drop-in for multi-instance later.
+//	  is keyed by a stable userID (supplied by the auth layer's Principal), so a
+//	  job routes only to the bridge bound to that same user. In legacy single-key
+//	  mode the userID is the constant "legacy", preserving the original
+//	  single-namespace behaviour exactly.
+//
+//		Supports enqueue, long-poll claim by a bridge, result posting, result
+//		fetching, and bridge-presence tracking (drives fail-fast). TTL-expires
+//		orphaned jobs. Redis is the intended drop-in for multi-instance later.
 //
 // AI usage: Built with assistance from AI tools for implementation acceleration,
 //
@@ -28,21 +33,21 @@ type jobEntry struct {
 	done      chan struct{} // closed when a result arrives; lets fetchers block
 }
 
-// Queue is a concurrency-safe, per-key job broker.
+// Queue is a concurrency-safe, per-userID job broker.
 type Queue struct {
 	mu sync.Mutex
 
-	// pending[key] is a FIFO of job IDs awaiting a bridge for that pairing key.
+	// pending[userID] is a FIFO of job IDs awaiting that user's bridge.
 	pending map[string][]string
 	// jobs is the global id -> entry map (ids are globally unique).
 	jobs map[string]*jobEntry
-	// jobKey maps a job id back to its pairing key (for scoped result posting).
-	jobKey map[string]string
-	// waiters[key] are bridges blocked in ClaimNext for that key; signalled on enqueue.
+	// jobUser maps a job id back to its user (for scoped result posting).
+	jobUser map[string]string
+	// waiters[userID] are bridges blocked in ClaimNext for that userID; signalled on enqueue.
 	waiters map[string][]chan struct{}
-	// lastPoll[key] is the last time any bridge polled ClaimNext for that key.
+	// lastPoll[userID] is the last time any bridge polled ClaimNext for that userID.
 	lastPoll map[string]time.Time
-	// caps[key] is the most recent capabilities a bridge reported for that key.
+	// caps[userID] is the most recent capabilities a bridge reported for that userID.
 	caps map[string]capsEntry
 
 	ttl          time.Duration // how long a finished/orphaned job is retained
@@ -60,7 +65,7 @@ func NewQueue(ttl, onlineWindow time.Duration) *Queue {
 	q := &Queue{
 		pending:      make(map[string][]string),
 		jobs:         make(map[string]*jobEntry),
-		jobKey:       make(map[string]string),
+		jobUser:      make(map[string]string),
 		waiters:      make(map[string][]chan struct{}),
 		lastPoll:     make(map[string]time.Time),
 		caps:         make(map[string]capsEntry),
@@ -71,8 +76,8 @@ func NewQueue(ttl, onlineWindow time.Duration) *Queue {
 	return q
 }
 
-// Enqueue records a new job for a pairing key and wakes one waiting bridge.
-func (q *Queue) Enqueue(key, id string, job api.Job) {
+// Enqueue records a new job for a user and wakes one of that user's waiting bridges.
+func (q *Queue) Enqueue(userID, id string, job api.Job) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -82,24 +87,24 @@ func (q *Queue) Enqueue(key, id string, job api.Job) {
 		createdAt: time.Now(),
 		done:      make(chan struct{}),
 	}
-	q.jobKey[id] = key
-	q.pending[key] = append(q.pending[key], id)
+	q.jobUser[id] = userID
+	q.pending[userID] = append(q.pending[userID], id)
 
 	// Wake exactly one blocked bridge, if any.
-	if ws := q.waiters[key]; len(ws) > 0 {
+	if ws := q.waiters[userID]; len(ws) > 0 {
 		w := ws[0]
-		q.waiters[key] = ws[1:]
+		q.waiters[userID] = ws[1:]
 		close(w)
 	}
 }
 
-// popLocked removes and returns the next pending job id for key (caller holds lock).
-func (q *Queue) popLocked(key string) (string, bool) {
-	ids := q.pending[key]
+// popLocked removes and returns the next pending job id for userID (caller holds lock).
+func (q *Queue) popLocked(userID string) (string, bool) {
+	ids := q.pending[userID]
 	for len(ids) > 0 {
 		id := ids[0]
 		ids = ids[1:]
-		q.pending[key] = ids
+		q.pending[userID] = ids
 		// Skip ids that were expired/removed while queued.
 		if _, ok := q.jobs[id]; ok {
 			return id, true
@@ -108,12 +113,12 @@ func (q *Queue) popLocked(key string) (string, bool) {
 	return "", false
 }
 
-// ClaimNext returns the next job for key, blocking up to wait for one to arrive.
+// ClaimNext returns the next job for userID, blocking up to wait for one to arrive.
 // It also records the poll time so BridgeOnline can report presence.
-func (q *Queue) ClaimNext(key string, wait time.Duration) (api.Job, bool) {
+func (q *Queue) ClaimNext(userID string, wait time.Duration) (api.Job, bool) {
 	q.mu.Lock()
-	q.lastPoll[key] = time.Now()
-	if id, ok := q.popLocked(key); ok {
+	q.lastPoll[userID] = time.Now()
+	if id, ok := q.popLocked(userID); ok {
 		job := q.jobs[id].job
 		q.mu.Unlock()
 		return job, true
@@ -121,7 +126,7 @@ func (q *Queue) ClaimNext(key string, wait time.Duration) (api.Job, bool) {
 
 	// Nothing queued: register a waiter and block.
 	ch := make(chan struct{})
-	q.waiters[key] = append(q.waiters[key], ch)
+	q.waiters[userID] = append(q.waiters[userID], ch)
 	q.mu.Unlock()
 
 	timer := time.NewTimer(wait)
@@ -131,8 +136,8 @@ func (q *Queue) ClaimNext(key string, wait time.Duration) (api.Job, bool) {
 	case <-ch:
 		// Signalled by Enqueue; refresh poll time and grab a job.
 		q.mu.Lock()
-		q.lastPoll[key] = time.Now()
-		if id, ok := q.popLocked(key); ok {
+		q.lastPoll[userID] = time.Now()
+		if id, ok := q.popLocked(userID); ok {
 			job := q.jobs[id].job
 			q.mu.Unlock()
 			return job, true
@@ -141,30 +146,30 @@ func (q *Queue) ClaimNext(key string, wait time.Duration) (api.Job, bool) {
 		return api.Job{}, false
 	case <-timer.C:
 		// Timed out; remove our waiter so it isn't signalled later.
-		q.removeWaiter(key, ch)
+		q.removeWaiter(userID, ch)
 		return api.Job{}, false
 	}
 }
 
-func (q *Queue) removeWaiter(key string, ch chan struct{}) {
+func (q *Queue) removeWaiter(userID string, ch chan struct{}) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	ws := q.waiters[key]
+	ws := q.waiters[userID]
 	for i, w := range ws {
 		if w == ch {
-			q.waiters[key] = append(ws[:i], ws[i+1:]...)
+			q.waiters[userID] = append(ws[:i], ws[i+1:]...)
 			return
 		}
 	}
 }
 
-// SetResult records a bridge's result for a job scoped to key. Returns false if
-// the job is unknown or does not belong to that pairing key.
-func (q *Queue) SetResult(key, id string, res api.ResultRequest) bool {
+// SetResult records a bridge's result for a job scoped to userID. Returns false if
+// the job is unknown or does not belong to that user.
+func (q *Queue) SetResult(userID, id string, res api.ResultRequest) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	if q.jobKey[id] != key {
+	if q.jobUser[id] != userID {
 		return false
 	}
 	e, ok := q.jobs[id]
@@ -185,7 +190,7 @@ func (q *Queue) SetResult(key, id string, res api.ResultRequest) bool {
 	return true
 }
 
-// Cancel abandons a job scoped to key. It returns the job's state at the moment
+// Cancel abandons a job scoped to userID. It returns the job's state at the moment
 // of cancellation so the caller can tell what actually happened:
 //   - "pending"   — it was still queued and has been removed; no bridge will run it
 //   - "running"   — a bridge already claimed it; see the caveat below
@@ -197,11 +202,11 @@ func (q *Queue) SetResult(key, id string, res api.ResultRequest) bool {
 // the caller waiting and mark the job so a late result is discarded. The work
 // (and the subscription quota) is already spent. This is a deliberate limit of
 // the dial-out architecture, not an oversight.
-func (q *Queue) Cancel(key, id string) (state string, ok bool) {
+func (q *Queue) Cancel(userID, id string) (state string, ok bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	if q.jobKey[id] != key {
+	if q.jobUser[id] != userID {
 		return "", false // unknown job, or another tenant's — same answer either way
 	}
 	e, exists := q.jobs[id]
@@ -214,7 +219,7 @@ func (q *Queue) Cancel(key, id string) (state string, ok bool) {
 
 	// Was it still queued? Removing it from pending is what actually prevents work.
 	prev := "running"
-	if q.removeFromPendingLocked(key, id) {
+	if q.removeFromPendingLocked(userID, id) {
 		prev = "pending"
 	}
 
@@ -228,24 +233,24 @@ func (q *Queue) Cancel(key, id string) (state string, ok bool) {
 	return prev, true
 }
 
-// removeFromPendingLocked drops id from key's queue, reporting whether it was
+// removeFromPendingLocked drops id from userID's queue, reporting whether it was
 // there. Caller must hold q.mu.
-func (q *Queue) removeFromPendingLocked(key, id string) bool {
-	ids := q.pending[key]
+func (q *Queue) removeFromPendingLocked(userID, id string) bool {
+	ids := q.pending[userID]
 	for i, v := range ids {
 		if v == id {
-			q.pending[key] = append(ids[:i:i], ids[i+1:]...)
+			q.pending[userID] = append(ids[:i:i], ids[i+1:]...)
 			return true
 		}
 	}
 	return false
 }
 
-// Fetch returns the current result for a job scoped to key. If the job is still
+// Fetch returns the current result for a job scoped to userID. If the job is still
 // pending and wait > 0, it blocks up to wait for a result to arrive.
-func (q *Queue) Fetch(key, id string, wait time.Duration) (api.JobResult, bool) {
+func (q *Queue) Fetch(userID, id string, wait time.Duration) (api.JobResult, bool) {
 	q.mu.Lock()
-	if q.jobKey[id] != key {
+	if q.jobUser[id] != userID {
 		q.mu.Unlock()
 		return api.JobResult{}, false
 	}
@@ -288,30 +293,30 @@ func (q *Queue) snapshotLocked(id string, e *jobEntry) api.JobResult {
 	}
 }
 
-// BridgeOnline reports whether a bridge polled for key within the online window.
-func (q *Queue) BridgeOnline(key string) bool {
+// BridgeOnline reports whether a bridge polled for userID within the online window.
+func (q *Queue) BridgeOnline(userID string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	last, ok := q.lastPoll[key]
+	last, ok := q.lastPoll[userID]
 	return ok && time.Since(last) <= q.onlineWindow
 }
 
 // ReportCapabilities stores what a bridge says it can do for this pairing key.
 // The relay cannot inspect the user's machine, so this is the only source of truth
 // for which CLI backends are actually installed there.
-func (q *Queue) ReportCapabilities(key string, caps api.BridgeCapabilities) {
+func (q *Queue) ReportCapabilities(userID string, caps api.BridgeCapabilities) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.caps[key] = capsEntry{caps: caps, reportedAt: time.Now()}
+	q.caps[userID] = capsEntry{caps: caps, reportedAt: time.Now()}
 }
 
-// Capabilities returns the last reported capabilities for key, its report time,
+// Capabilities returns the last reported capabilities for userID, its report time,
 // and whether a bridge is currently online.
-func (q *Queue) Capabilities(key string) (api.BridgeCapabilities, time.Time, bool) {
+func (q *Queue) Capabilities(userID string) (api.BridgeCapabilities, time.Time, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	e, ok := q.caps[key]
-	last, pollOK := q.lastPoll[key]
+	e, ok := q.caps[userID]
+	last, pollOK := q.lastPoll[userID]
 	online := pollOK && time.Since(last) <= q.onlineWindow
 	if !ok {
 		return api.BridgeCapabilities{}, time.Time{}, online
@@ -319,12 +324,12 @@ func (q *Queue) Capabilities(key string) (api.BridgeCapabilities, time.Time, boo
 	return e.caps, e.reportedAt, online
 }
 
-// PendingCount returns how many jobs are queued (unclaimed) for key.
-func (q *Queue) PendingCount(key string) int {
+// PendingCount returns how many jobs are queued (unclaimed) for userID.
+func (q *Queue) PendingCount(userID string) int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	n := 0
-	for _, id := range q.pending[key] {
+	for _, id := range q.pending[userID] {
 		if _, ok := q.jobs[id]; ok {
 			n++
 		}
@@ -341,7 +346,7 @@ func (q *Queue) janitor() {
 		for id, e := range q.jobs {
 			if time.Since(e.createdAt) > q.ttl {
 				delete(q.jobs, id)
-				delete(q.jobKey, id)
+				delete(q.jobUser, id)
 			}
 		}
 		q.mu.Unlock()

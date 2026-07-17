@@ -176,3 +176,93 @@ func TestCancelFinishedJobIsANoop(t *testing.T) {
 		t.Errorf("a completed job's result must survive cancel: %+v", res)
 	}
 }
+
+// --- Phase 1 multi-tenant isolation ---
+// These prove the security property the userID re-keying exists to provide:
+// two distinct users share nothing. Before this change the "key" WAS the
+// namespace, so these hold by construction — but they must keep holding as
+// richer principals (OIDC users, app-target users) start supplying the userID.
+
+// A job enqueued for alice must never be claimable by bob's bridge.
+func TestIsolation_JobRoutesOnlyToOwningUser(t *testing.T) {
+	q := NewQueue(time.Minute, time.Minute)
+	q.Enqueue("alice", "j1", api.Job{ID: "j1", Backend: "cursor", Prompt: "x"})
+
+	// Bob's bridge polls: gets nothing.
+	if _, ok := q.ClaimNext("bob", 50*time.Millisecond); ok {
+		t.Fatal("bob's bridge claimed alice's job — cross-tenant leak")
+	}
+	// Alice's bridge polls: gets it.
+	if _, ok := q.ClaimNext("alice", 50*time.Millisecond); !ok {
+		t.Fatal("alice's bridge could not claim alice's own job")
+	}
+}
+
+// Bob cannot post a result for alice's job.
+func TestIsolation_ResultScopedToOwner(t *testing.T) {
+	q := NewQueue(time.Minute, time.Minute)
+	q.Enqueue("alice", "j1", api.Job{ID: "j1", Backend: "cursor", Prompt: "x"})
+	q.ClaimNext("alice", time.Second)
+
+	if q.SetResult("bob", "j1", api.ResultRequest{OK: true, Text: "stolen"}) {
+		t.Fatal("bob posted a result for alice's job — cross-tenant write")
+	}
+	if !q.SetResult("alice", "j1", api.ResultRequest{OK: true, Text: "ok"}) {
+		t.Fatal("alice could not post her own job's result")
+	}
+}
+
+// Bob cannot fetch alice's result (404-equivalent: ok=false).
+func TestIsolation_FetchScopedToOwner(t *testing.T) {
+	q := NewQueue(time.Minute, time.Minute)
+	q.Enqueue("alice", "j1", api.Job{ID: "j1", Backend: "cursor", Prompt: "x"})
+	q.ClaimNext("alice", time.Second)
+	q.SetResult("alice", "j1", api.ResultRequest{OK: true, Text: "secret"})
+
+	if _, ok := q.Fetch("bob", "j1", 0); ok {
+		t.Fatal("bob fetched alice's result — cross-tenant read")
+	}
+	if _, ok := q.Fetch("alice", "j1", 0); !ok {
+		t.Fatal("alice could not fetch her own result")
+	}
+}
+
+// Bob cannot cancel alice's job.
+func TestIsolation_CancelScopedToOwner(t *testing.T) {
+	q := NewQueue(time.Minute, time.Minute)
+	q.Enqueue("alice", "j1", api.Job{ID: "j1", Backend: "cursor", Prompt: "x"})
+
+	if _, ok := q.Cancel("bob", "j1"); ok {
+		t.Fatal("bob cancelled alice's job — cross-tenant control")
+	}
+	// Alice's job is untouched and still claimable.
+	if _, ok := q.ClaimNext("alice", 50*time.Millisecond); !ok {
+		t.Fatal("alice's job was affected by bob's cancel attempt")
+	}
+}
+
+// Presence is per-user: alice's bridge polling does not make bob look online.
+func TestIsolation_PresencePerUser(t *testing.T) {
+	q := NewQueue(time.Minute, time.Minute)
+	q.ClaimNext("alice", 10*time.Millisecond) // alice's bridge polled
+
+	if !q.BridgeOnline("alice") {
+		t.Fatal("alice should be online after polling")
+	}
+	if q.BridgeOnline("bob") {
+		t.Fatal("bob appears online though only alice's bridge polled")
+	}
+}
+
+// Capabilities are per-user: one user's report does not overwrite another's.
+func TestIsolation_CapabilitiesPerUser(t *testing.T) {
+	q := NewQueue(time.Minute, time.Minute)
+	q.ReportCapabilities("alice", api.BridgeCapabilities{Hostname: "alice-mac"})
+	q.ReportCapabilities("bob", api.BridgeCapabilities{Hostname: "bob-pc"})
+
+	a, _, _ := q.Capabilities("alice")
+	b, _, _ := q.Capabilities("bob")
+	if a.Hostname != "alice-mac" || b.Hostname != "bob-pc" {
+		t.Fatalf("capabilities leaked across users: alice=%q bob=%q", a.Hostname, b.Hostname)
+	}
+}
