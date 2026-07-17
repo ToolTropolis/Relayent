@@ -141,6 +141,55 @@ type StatusResponse struct {
 	NetworkReachable bool `json:"network_reachable"`
 }
 
+// --- admin surface (/v1/admin/*) ---
+
+// AdminUser is a user as shown on the admin surface, with per-user activity but
+// NEVER prompt/result content. Enrollment/credential secrets are never included.
+type AdminUser struct {
+	Sub          string `json:"sub"`
+	Email        string `json:"email"`
+	DisplayName  string `json:"display_name"`
+	Role         string `json:"role"`
+	Disabled     bool   `json:"disabled"`
+	BridgeOnline bool   `json:"bridge_online"` // is any bound bridge polling?
+	PendingJobs  int    `json:"pending_jobs"`  // queued for this user
+	Bridges      int    `json:"bridges"`       // number of enrolled bridges
+}
+
+// CreateUserRequest creates a user directly (for non-OIDC bootstrap/testing);
+// normally users are created by their first OIDC login.
+type CreateUserRequest struct {
+	Sub         string `json:"sub"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name,omitempty"`
+	Role        string `json:"role,omitempty"` // "admin" | "user" (default user)
+}
+
+// EnrollTokenRequest asks the relay to mint a one-time enrollment token for a
+// user, which the admin sends to that user out-of-band.
+type EnrollTokenRequest struct {
+	UserSub    string `json:"user_sub"`
+	TTLSeconds int    `json:"ttl_seconds,omitempty"` // default 900 (15 min)
+}
+
+// EnrollTokenResponse returns the one-time token — shown ONCE.
+type EnrollTokenResponse struct {
+	Token     string `json:"token"`      // give this to the user; not recoverable
+	ExpiresAt string `json:"expires_at"` // RFC3339
+}
+
+// CreateAppCredRequest issues an app credential (e.g. for EngageHub).
+type CreateAppCredRequest struct {
+	AppID  string   `json:"app_id"`
+	Scopes []string `json:"scopes,omitempty"` // default ["enqueue"]
+}
+
+// CreateAppCredResponse returns the app credential — the secret is shown ONCE.
+type CreateAppCredResponse struct {
+	AppID      string `json:"app_id"`
+	Credential string `json:"credential"` // "<id>.<secret>" — save this now
+}
+
 // ErrorResponse is the uniform error envelope for 4xx/5xx responses.
 type ErrorResponse struct {
 	Error string `json:"error"`

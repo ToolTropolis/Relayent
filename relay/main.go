@@ -58,6 +58,7 @@ type server struct {
 	keys       KeySet    // accepted pairing keys (primary + retiring); empty = any key
 	store      *Store    // control-plane persistence; nil = legacy no-persistence mode
 	oidc       *oidcAuth // human login via OIDC; nil = not configured
+	adminToken string    // bootstrap admin bearer (RELAYENT_ADMIN_TOKEN); "" = disabled
 	startedAt  time.Time
 	authLimit  *limiter // guards credential guessing (keyed by client IP)
 	jobLimit   *limiter // guards job floods / quota burn (keyed by key fingerprint)
@@ -115,6 +116,15 @@ func main() {
 		log.Fatalf("[relayent-relay] %v", err)
 	}
 
+	// The bootstrap admin token grants full admin scope, so on a network-reachable
+	// relay it must be strong — the same floor as the pairing key. A weak admin
+	// token would be a trivial path to minting credentials for any user.
+	if tok := os.Getenv("RELAYENT_ADMIN_TOKEN"); tok != "" && !isLoopbackAddr(addr) &&
+		os.Getenv("RELAYENT_ALLOW_INSECURE") != "1" && len(tok) < minKeyLen {
+		log.Fatalf("[relayent-relay] RELAYENT_ADMIN_TOKEN is too short (%d chars, need >= %d) "+
+			"for a network-reachable relay. Generate a strong one: relayent-relay keygen", len(tok), minKeyLen)
+	}
+
 	// Control-plane persistence is opt-in. With no RELAYENT_DATA_DIR the store is
 	// nil and the relay runs exactly as before — no database, no disk state —
 	// which is what the live single-key deployment does. Multi-tenant features
@@ -145,6 +155,7 @@ func main() {
 		keys:       keys,
 		store:      store,
 		oidc:       oidcAuth,
+		adminToken: os.Getenv("RELAYENT_ADMIN_TOKEN"),
 		startedAt:  time.Now(),
 		authLimit:  newLimiter(authRatePerSec, authBurst),
 		jobLimit:   newLimiter(jobRatePerSec, jobBurst),
@@ -176,6 +187,16 @@ func main() {
 		mux.HandleFunc("GET /v1/auth/callback", srv.oidc.handleCallback)
 		mux.HandleFunc("GET /v1/auth/logout", srv.oidc.handleLogout)
 	}
+
+	// Admin surface — every route requires the admin scope (an OIDC admin
+	// session). A non-admin principal gets 403; an unauthenticated one gets 401.
+	mux.HandleFunc("GET /v1/admin/users", srv.authorize(ScopeAdmin, srv.adminListUsers))
+	mux.HandleFunc("POST /v1/admin/users", srv.authorize(ScopeAdmin, srv.adminCreateUser))
+	mux.HandleFunc("POST /v1/admin/users/{sub}/disabled", srv.authorize(ScopeAdmin, srv.adminSetUserDisabled))
+	mux.HandleFunc("POST /v1/admin/enroll-tokens", srv.authorize(ScopeAdmin, srv.adminIssueEnrollToken))
+	mux.HandleFunc("GET /v1/admin/app-creds", srv.authorize(ScopeAdmin, srv.adminListAppCreds))
+	mux.HandleFunc("POST /v1/admin/app-creds", srv.authorize(ScopeAdmin, srv.adminCreateAppCred))
+	mux.HandleFunc("POST /v1/admin/app-creds/{id}/revoke", srv.authorize(ScopeAdmin, srv.adminRevokeAppCred))
 
 	mux.HandleFunc("GET /", srv.statusPage)
 
@@ -291,6 +312,17 @@ func (s *server) authenticate(r *http.Request) *Principal {
 	bearer := keyFromRequest(r)
 	if bearer == "" {
 		return nil
+	}
+
+	// Bootstrap admin token (RELAYENT_ADMIN_TOKEN): grants admin scope directly.
+	// For initial setup before any OIDC admin exists, and for orgs not using
+	// OIDC at all. Compared constant-time. Deliberately checked before the
+	// machine-credential and pairing-key schemes.
+	if s.adminToken != "" && checkKey(bearer, s.adminToken) {
+		return &Principal{
+			UserID: "bootstrap-admin", Kind: KindAdmin,
+			Scopes: []string{ScopeAdmin}, KeyFP: keyFingerprint(bearer),
+		}
 	}
 
 	// A relay-issued machine credential ("<id>.<secret>"), when a store exists.

@@ -348,6 +348,47 @@ func (s *Store) ListBindingsForUser(sub string) ([]BridgeBinding, error) {
 	return out, err
 }
 
+// ListAppCreds returns all app credentials (without secrets — only public ids
+// and metadata) for the admin surface.
+func (s *Store) ListAppCreds() ([]AppCred, error) {
+	if !s.Enabled() {
+		return nil, nil
+	}
+	var out []AppCred
+	err := s.db.View(func(tx *bolt.Tx) error {
+		return tx.Bucket(bktAppCreds).ForEach(func(_, v []byte) error {
+			var c AppCred
+			if err := json.Unmarshal(v, &c); err != nil {
+				return err
+			}
+			c.KeyHash = "" // never expose the hash on the admin surface
+			out = append(out, c)
+			return nil
+		})
+	})
+	return out, err
+}
+
+// RevokeAppCred marks an app credential revoked (admin action).
+func (s *Store) RevokeAppCred(id string) error {
+	if !s.Enabled() {
+		return nil
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket(bktAppCreds)
+		v := bkt.Get([]byte(id))
+		if v == nil {
+			return ErrNotFound
+		}
+		var c AppCred
+		if err := json.Unmarshal(v, &c); err != nil {
+			return err
+		}
+		c.Revoked = true
+		return bkt.Put([]byte(id), mustJSON(c))
+	})
+}
+
 // --- enrollment tokens ---
 
 // PutEnrollToken stores a one-time token under tokenHash (sha256 of the token).
