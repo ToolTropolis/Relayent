@@ -31,7 +31,7 @@ relay reading a schema its code no longer understands.
 |---|---|---|---|
 | 1 | `phase-1-principal` | `Principal` type; Queue re-keyed `key`→`userID`; auth middleware → `*Principal`. Pure refactor. | **Nothing to clean up.** Zero behaviour change, no state, no new deps. `git reset --hard main` fully undoes it. |
 | 2 | `phase-2-store` ✅ | **bbolt** control-plane store (`go.etcd.io/bbolt` — NOT sqlite; see note); opt-in via `RELAYENT_DATA_DIR`. | Code revert is safe (`git reset --hard phase-1-principal`). **Also** `go mod tidy` to drop bbolt, and delete `$RELAYENT_DATA_DIR` / the `relay_data` volume. Nothing in production reads it (nil store in legacy mode), so no data-loss risk. |
-| 3 | `phase-3-oidc` *(pending)* | OIDC login (`go-oidc`), session, admin gate. | Code revert safe. Remove OIDC env/config; delete the `go-oidc` dep. No schema change beyond phase 2's `users` table. |
+| 3 | `phase-3-oidc` ✅ | OIDC login (`go-oidc` + `oauth2`), tamper-evident session cookie, first-login-is-admin bootstrap. | Code revert safe (`git reset --hard phase-2-store`). `go mod tidy` drops go-oidc/oauth2. Remove `RELAYENT_OIDC_*` env. No schema change — reuses phase 2's users bucket. |
 | 4 | `phase-4-machine-auth` *(pending)* | Hashed bridge + app credentials. | Code revert safe. Rows in `app_creds`/`bridge_bindings` become orphaned — harmless, or drop the tables. |
 | 5 | `phase-5-enroll` *(pending)* | `POST /v1/enroll`; bridge setup enrollment. | Code revert safe. Already-enrolled bridges fall back to the legacy key path (still supported). |
 | 6 | `phase-6-target-user` *(pending)* | `EnqueueRequest.TargetUser`; app-key routing. | Code revert safe. The field is additive; old clients ignore it. |
