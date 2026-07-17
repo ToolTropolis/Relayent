@@ -199,6 +199,11 @@ func main() {
 	mux.HandleFunc("POST /v1/admin/app-creds/{id}/revoke", srv.authorize(ScopeAdmin, srv.adminRevokeAppCred))
 	mux.HandleFunc("GET /v1/admin/audit", srv.authorize(ScopeAdmin, srv.adminAudit))
 
+	// The admin dashboard (multi-tenant only). The page itself is public HTML —
+	// it authenticates its /v1/admin/* XHRs via the OIDC session cookie or a
+	// pasted admin token, exactly as the status page does with the pairing key.
+	mux.HandleFunc("GET /admin", srv.adminPage)
+
 	mux.HandleFunc("GET /", srv.statusPage)
 
 	// Explicit timeouts: the default zero-value server has none, leaving it open
