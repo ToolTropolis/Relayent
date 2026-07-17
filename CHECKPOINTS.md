@@ -34,7 +34,7 @@ relay reading a schema its code no longer understands.
 | 3 | `phase-3-oidc` ✅ | OIDC login (`go-oidc` + `oauth2`), tamper-evident session cookie, first-login-is-admin bootstrap. | Code revert safe (`git reset --hard phase-2-store`). `go mod tidy` drops go-oidc/oauth2. Remove `RELAYENT_OIDC_*` env. No schema change — reuses phase 2's users bucket. |
 | 4 | `phase-4-machine-auth` ✅ | Hashed bridge + app credentials (`<id>.<secret>`); one-time enrollment tokens. | Code revert safe (`git reset --hard phase-3-oidc`). Orphaned `app_creds`/`bridge_bindings` buckets are harmless, or clear the data dir. No dep change. |
 | 5 | `phase-5-enroll` ✅ | `POST /v1/enroll` (one-time token → bridge credential); `setup` accepts a token or a key. | Code revert safe (`git reset --hard phase-4-machine-auth`). Already-issued bridge credentials stop being accepted; re-run `setup` with the legacy key. |
-| 6 | `phase-6-target-user` *(pending)* | `EnqueueRequest.TargetUser`; app-key routing. | Code revert safe. The field is additive; old clients ignore it. |
+| 6 | `phase-6-target-user` ✅ | `EnqueueRequest.TargetUser` + `routeTarget` (per-user routing, anti-spoof guard). | Code revert safe (`git reset --hard phase-5-enroll`). Additive field; old clients omit it and self-route. |
 | 7 | `phase-7-admin` *(pending)* | `/v1/admin/*` + admin dashboard. | Code revert safe. No new persisted state beyond phases 2/4. |
 | 8 | `phase-8-audit` *(pending)* | Audit table + no-content boundary. | Code revert safe. `audit` table becomes orphaned; drop it if desired. |
 | 9 | `phase-9-compat` *(pending)* | Legacy migration docs; SECURITY.md posture update. | Docs only. Trivially revertible. |
