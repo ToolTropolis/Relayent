@@ -62,6 +62,7 @@ func (s *server) adminPage(w http.ResponseWriter, r *http.Request) {
 	// Sign-in lives on /login now; the console renders only for an admin (an OIDC
 	// admin session, or a bootstrap token adopted from /login's #token hand-off).
 	page := strings.Replace(adminHTML, "%NONCE%", nonce, 1)
+	page = strings.ReplaceAll(page, "%VERSION%", htmlEscape(Version))
 	_, _ = w.Write([]byte(page))
 }
 
@@ -80,96 +81,186 @@ const adminHTML = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Relayent — Admin</title>
 <style>
+  /* Palette: a cool indigo-biased neutral (chosen, not default grey) + one flat
+     indigo accent + semantic good/warn/critical kept separate from the accent.
+     Infrastructure-console register — quiet, dense, state legible at a glance. */
   :root {
-    --bg:#0e1014; --panel:#14171d; --card:#181c24; --line:#262b36; --fg:#e6e9ef;
-    --muted:#8b93a4; --ok:#37d67a; --bad:#f2635f; --warn:#f2c15f; --accent:#6ea8fe;
-    --accent-soft:color-mix(in srgb,var(--accent) 16%,transparent);
-    --sidebar:250px;
+    --bg:#0b0d12; --panel:#0f1218; --card:#141821; --card-2:#181d27;
+    --line:#222836; --line-soft:#1a1f2b; --fg:#e8eaf0; --fg-dim:#c2c7d4;
+    --muted:#8790a2; --faint:#5b6478;
+    --accent:#6366f1; --accent-fg:#c7cbff;
+    --accent-soft:color-mix(in srgb,var(--accent) 18%,transparent);
+    --ok:#10b981; --warn:#f59e0b; --bad:#ef4444;
+    --shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 12px 32px -18px rgba(0,0,0,.6);
+    --sidebar:264px;
+    color-scheme:dark;
   }
   @media (prefers-color-scheme: light) {
-    :root { --bg:#f4f6f9; --panel:#fff; --card:#fff; --line:#e3e6ec; --fg:#1a1d23;
-      --muted:#5d6472; --accent-soft:color-mix(in srgb,var(--accent) 12%,transparent); }
+    :root {
+      --bg:#f7f8fa; --panel:#fbfcfe; --card:#ffffff; --card-2:#f7f8fb;
+      --line:#e5e8ef; --line-soft:#eef0f5; --fg:#141824; --fg-dim:#3a4152;
+      --muted:#5b6373; --faint:#98a0b0;
+      --accent:#5457ee; --accent-fg:#3f43d6;
+      --accent-soft:color-mix(in srgb,var(--accent) 12%,transparent);
+      --shadow:0 1px 2px rgba(16,20,40,.04), 0 12px 28px -20px rgba(16,20,40,.18);
+      color-scheme:light;
+    }
+  }
+  /* The viewer's explicit toggle must win over the OS media query, both ways. */
+  :root[data-theme="dark"] {
+    --bg:#0b0d12; --panel:#0f1218; --card:#141821; --card-2:#181d27;
+    --line:#222836; --line-soft:#1a1f2b; --fg:#e8eaf0; --fg-dim:#c2c7d4;
+    --muted:#8790a2; --faint:#5b6478; --accent:#6366f1; --accent-fg:#c7cbff;
+    --accent-soft:color-mix(in srgb,var(--accent) 18%,transparent);
+    --shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 12px 32px -18px rgba(0,0,0,.6);
+    color-scheme:dark;
+  }
+  :root[data-theme="light"] {
+    --bg:#f7f8fa; --panel:#fbfcfe; --card:#ffffff; --card-2:#f7f8fb;
+    --line:#e5e8ef; --line-soft:#eef0f5; --fg:#141824; --fg-dim:#3a4152;
+    --muted:#5b6373; --faint:#98a0b0; --accent:#5457ee; --accent-fg:#3f43d6;
+    --accent-soft:color-mix(in srgb,var(--accent) 12%,transparent);
+    --shadow:0 1px 2px rgba(16,20,40,.04), 0 12px 28px -20px rgba(16,20,40,.18);
+    color-scheme:light;
   }
   * { box-sizing:border-box; }
   html,body { height:100%; }
   body { margin:0; background:var(--bg); color:var(--fg);
-    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  ::selection { background:var(--accent-soft); }
+  a { color:var(--accent-fg); }
 
   /* App shell: fixed sidebar + scrolling main. */
   .shell { display:grid; grid-template-columns:var(--sidebar) 1fr; min-height:100vh; }
   .side { background:var(--panel); border-right:1px solid var(--line);
     display:flex; flex-direction:column; position:sticky; top:0; height:100vh; }
-  .brand { display:flex; align-items:center; gap:.6rem; padding:1.15rem 1.25rem;
-    border-bottom:1px solid var(--line); }
-  .brand .mark { width:26px; height:26px; border-radius:7px;
-    background:linear-gradient(135deg,var(--accent),#9f7bff); flex:none; }
-  .brand b { font-size:1.05rem; letter-spacing:-.01em; }
-  .brand span { color:var(--muted); font-size:.72rem; }
-  nav { padding:.75rem .6rem; overflow-y:auto; flex:1; }
-  .navgroup { color:var(--muted); font-size:.68rem; text-transform:uppercase;
-    letter-spacing:.09em; font-weight:700; padding:.9rem .65rem .35rem; }
-  .navlink { display:flex; align-items:center; gap:.6rem; width:100%; text-align:left;
-    background:none; border:0; color:var(--fg); font:inherit; cursor:pointer;
-    padding:.5rem .65rem; border-radius:8px; margin-bottom:1px; }
-  .navlink:hover { background:var(--accent-soft); }
-  .navlink.active { background:var(--accent-soft); color:var(--accent); font-weight:600; }
-  .navlink .ic { width:16px; text-align:center; opacity:.9; }
-  .whoami { border-top:1px solid var(--line); padding:.85rem 1.1rem;
+  .brand { display:flex; align-items:center; gap:.7rem; padding:1.25rem 1.35rem 1.1rem;
+    border-bottom:1px solid var(--line-soft); }
+  .brand .mark { width:30px; height:30px; border-radius:9px; flex:none; position:relative;
+    background:linear-gradient(150deg,#818cf8,var(--accent) 55%,#4f46e5);
+    box-shadow:0 4px 14px -4px color-mix(in srgb,var(--accent) 60%,transparent); }
+  .brand .mark::after { content:""; position:absolute; inset:0; border-radius:9px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.35); }
+  .brand b { font-size:1.06rem; letter-spacing:-.02em; font-weight:650; }
+  .brand span { color:var(--faint); font-size:.7rem; letter-spacing:.02em;
+    text-transform:uppercase; }
+  nav { padding:.6rem .7rem; overflow-y:auto; flex:1; }
+  .navgroup { color:var(--faint); font-size:.66rem; text-transform:uppercase;
+    letter-spacing:.11em; font-weight:700; padding:1rem .7rem .3rem; }
+  .navlink { display:flex; align-items:center; gap:.65rem; width:100%; text-align:left;
+    background:none; border:0; color:var(--fg-dim); font:inherit; font-size:.92rem; cursor:pointer;
+    padding:.5rem .7rem; border-radius:8px; margin-bottom:1px; position:relative;
+    transition:background .12s ease, color .12s ease; }
+  .navlink:hover { background:color-mix(in srgb,var(--fg) 6%,transparent); color:var(--fg); }
+  .navlink.active { background:var(--accent-soft); color:var(--accent-fg); font-weight:600; }
+  .navlink.active::before { content:""; position:absolute; left:-.7rem; top:50%;
+    transform:translateY(-50%); width:3px; height:1.05rem; border-radius:0 3px 3px 0;
+    background:var(--accent); }
+  .navlink .ic { width:17px; text-align:center; color:var(--faint); font-size:.95rem; }
+  .navlink.active .ic { color:var(--accent); }
+  .navlink .tw { transition:transform .15s ease; }
+
+  .subnav { display:flex; flex-direction:column; margin:1px 0 2px .55rem;
+    padding-left:.55rem; border-left:1px solid var(--line); }
+  .subnavlink { text-align:left; background:none; border:0; color:var(--muted);
+    font:inherit; font-size:.86rem; cursor:pointer; padding:.34rem .7rem; border-radius:7px;
+    transition:background .12s ease, color .12s ease; }
+  .subnavlink:hover { background:color-mix(in srgb,var(--fg) 6%,transparent); color:var(--fg); }
+  .subnavlink.active { color:var(--accent-fg); font-weight:600; }
+
+  .whoami { border-top:1px solid var(--line-soft); padding:.85rem 1.1rem;
     display:flex; align-items:center; justify-content:space-between; gap:.5rem; font-size:.82rem; }
-  .whoami .who { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .whoami .who { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    display:flex; align-items:center; gap:.45rem; color:var(--fg-dim); }
+  .whoami .avatar { width:22px; height:22px; border-radius:50%; flex:none;
+    background:linear-gradient(150deg,var(--accent),#4f46e5); color:#fff; font-size:.7rem;
+    font-weight:700; display:grid; place-items:center; }
   .whoami a { color:var(--muted); text-decoration:none; }
   .whoami a:hover { color:var(--fg); }
+  .sidefoot { border-top:1px solid var(--line-soft); padding:.7rem 1.1rem .9rem;
+    display:flex; align-items:center; justify-content:space-between; gap:.5rem;
+    font-size:.74rem; color:var(--faint); }
+  .sidefoot a { display:inline-flex; align-items:center; gap:.4rem; color:var(--muted);
+    text-decoration:none; }
+  .sidefoot a:hover { color:var(--fg); }
+  .sidefoot svg { width:15px; height:15px; fill:currentColor; }
+  .sidefoot .ver { font:600 .72rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+    color:var(--faint); }
 
-  main { min-width:0; padding:1.75rem 2rem 3rem; }
-  .head { margin-bottom:1.25rem; }
-  .head h1 { margin:0 0 .2rem; font-size:1.4rem; letter-spacing:-.02em; }
-  .head p { margin:0; color:var(--muted); font-size:.9rem; }
+  main { min-width:0; padding:2rem 2.25rem 2.5rem; display:flex; flex-direction:column;
+    min-height:100vh; }
+  .head { margin-bottom:1.35rem; }
+  .head h1 { margin:0 0 .25rem; font-size:1.55rem; line-height:1.15; letter-spacing:-.025em;
+    font-weight:650; text-wrap:balance; }
+  .head p { margin:0; color:var(--muted); font-size:.92rem; max-width:70ch; }
 
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
-    padding:1.1rem 1.25rem; margin-bottom:1rem; }
-  .card h2 { margin:0 0 .85rem; font-size:.75rem; text-transform:uppercase;
-    letter-spacing:.08em; color:var(--muted); font-weight:700; }
-  .card h2 .note { text-transform:none; letter-spacing:0; font-weight:400; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:1.2rem 1.35rem; margin-bottom:1.1rem; box-shadow:var(--shadow); }
+  .card h2 { margin:0 0 .9rem; font-size:.72rem; text-transform:uppercase;
+    letter-spacing:.09em; color:var(--muted); font-weight:700; }
+  .card h2 .note { text-transform:none; letter-spacing:0; font-weight:400; color:var(--faint); }
+  @keyframes flashcard { 0%{box-shadow:0 0 0 2px var(--accent), var(--shadow);} 100%{box-shadow:var(--shadow);} }
+  .card.flash { animation:flashcard 1.1s ease-out; }
 
   table { width:100%; border-collapse:collapse; }
-  th,td { text-align:left; padding:.55rem .6rem; border-bottom:1px solid var(--line);
+  th,td { text-align:left; padding:.6rem .65rem; border-bottom:1px solid var(--line-soft);
     font-variant-numeric:tabular-nums; vertical-align:middle; }
-  th { color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; }
+  th { color:var(--faint); font-size:.68rem; text-transform:uppercase; letter-spacing:.07em;
+    font-weight:700; padding-top:.3rem; padding-bottom:.5rem; }
+  tbody tr { transition:background .1s ease; }
+  tbody tr:hover { background:color-mix(in srgb,var(--fg) 3%,transparent); }
   tr:last-child td { border-bottom:0; }
   .tablewrap { overflow-x:auto; }
 
-  .pill { display:inline-flex; align-items:center; gap:.35rem; font-weight:600; font-size:.85rem; }
-  .dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
-  .ok .dot{background:var(--ok)} .ok{color:var(--ok)}
-  .bad .dot{background:var(--bad)} .bad{color:var(--bad)}
-  .tag { font-size:.72rem; font-weight:600; padding:.1rem .5rem; border-radius:999px;
-    border:1px solid var(--line); color:var(--muted); }
-  .tag.admin { color:var(--accent); border-color:var(--accent-soft); background:var(--accent-soft); }
+  .pill { display:inline-flex; align-items:center; gap:.4rem; font-weight:600; font-size:.82rem; }
+  .dot { width:7px; height:7px; border-radius:50%; display:inline-block; box-shadow:0 0 0 3px transparent; }
+  .ok .dot{background:var(--ok); box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 18%,transparent)} .ok{color:var(--ok)}
+  .bad .dot{background:var(--faint)} .bad{color:var(--muted)}
+  .tag { font-size:.7rem; font-weight:600; padding:.13rem .55rem; border-radius:999px;
+    border:1px solid var(--line); color:var(--muted); letter-spacing:.01em; }
+  .tag.admin { color:var(--accent-fg); border-color:var(--accent-soft); background:var(--accent-soft); }
   .muted { color:var(--muted); }
 
   input,button,select { font:inherit; }
   input,select { background:var(--bg); border:1px solid var(--line); color:var(--fg);
-    padding:.5rem .65rem; border-radius:8px; }
-  button { background:var(--accent); color:#0b1020; border:0; padding:.5rem .9rem;
-    border-radius:8px; font-weight:600; cursor:pointer; }
+    padding:.55rem .7rem; border-radius:9px; transition:border-color .12s ease, box-shadow .12s ease; }
+  input:focus,select:focus { outline:none; border-color:var(--accent);
+    box-shadow:0 0 0 3px var(--accent-soft); }
+  input::placeholder { color:var(--faint); }
+  button { background:var(--accent); color:#fff; border:0; padding:.55rem .95rem;
+    border-radius:9px; font-weight:600; cursor:pointer; transition:filter .12s ease, transform .04s ease; }
   button:hover { filter:brightness(1.08); }
-  button.ghost { background:transparent; color:var(--fg); border:1px solid var(--line); }
-  button.danger { background:transparent; color:var(--bad); border:1px solid color-mix(in srgb,var(--bad) 45%,transparent); }
-  button.sm { padding:.32rem .6rem; font-size:.82rem; }
+  button:active { transform:translateY(1px); }
+  button:focus-visible { outline:2px solid var(--accent-fg); outline-offset:2px; }
+  button.ghost { background:transparent; color:var(--fg-dim); border:1px solid var(--line); }
+  button.ghost:hover { border-color:var(--accent); color:var(--fg); filter:none; }
+  button.danger { background:transparent; color:var(--bad); border:1px solid color-mix(in srgb,var(--bad) 40%,transparent); }
+  button.danger:hover { background:color-mix(in srgb,var(--bad) 12%,transparent); filter:none; }
+  button.sm { padding:.34rem .62rem; font-size:.82rem; border-radius:8px; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
   .row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; margin-bottom:.7rem; }
   .row:last-child { margin-bottom:0; }
   .grow { flex:1; min-width:0; }
   .actions { display:flex; gap:.4rem; flex-wrap:wrap; justify-content:flex-end; }
-  code { font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
-    background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:.05rem .3rem;
+  code { font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--fg-dim);
+    background:var(--bg); border:1px solid var(--line); border-radius:5px; padding:.08rem .35rem;
     word-break:break-all; }
 
-  .kv { display:grid; grid-template-columns:170px 1fr; gap:.15rem .5rem; }
-  .kv .k { color:var(--muted); padding:.35rem 0; }
-  .kv .v { padding:.35rem 0; font-variant-numeric:tabular-nums; word-break:break-all; }
-  .stat { display:flex; gap:1.5rem; flex-wrap:wrap; }
-  .stat .n { font-size:1.6rem; font-weight:700; letter-spacing:-.02em; }
-  .stat .l { color:var(--muted); font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; }
+  .kv { display:grid; grid-template-columns:180px 1fr; gap:0 .5rem; }
+  .kv .k { color:var(--muted); padding:.5rem 0; border-bottom:1px solid var(--line-soft); font-size:.9rem; }
+  .kv .v { padding:.5rem 0; border-bottom:1px solid var(--line-soft);
+    font-variant-numeric:tabular-nums; word-break:break-all; font-size:.9rem; }
+  .kv .k:last-of-type, .kv .v:last-child { border-bottom:0; }
+
+  /* Metric tiles — summary before detail. */
+  .stat { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:.9rem; }
+  .tile { border:1px solid var(--line); border-radius:12px; padding:1rem 1.1rem;
+    background:linear-gradient(180deg,var(--card-2),var(--card)); }
+  .tile .n { font-size:1.9rem; font-weight:700; letter-spacing:-.03em; line-height:1;
+    font-variant-numeric:tabular-nums; }
+  .tile .l { color:var(--muted); font-size:.72rem; text-transform:uppercase;
+    letter-spacing:.06em; margin-top:.4rem; font-weight:600; }
 
   .banner { display:none; padding:.75rem .95rem; border-radius:10px; margin-bottom:1.1rem;
     border:1px solid var(--line); }
@@ -183,6 +274,27 @@ const adminHTML = `<!doctype html>
   .hint { color:var(--muted); font-size:.82rem; margin:.15rem 0 0; }
   .view { display:none; }
   .view.active { display:block; }
+
+  /* Credits / footer — sits at the bottom of every view (main is a flex column). */
+  .credits { margin-top:auto; padding-top:1.75rem; border-top:1px solid var(--line-soft);
+    display:grid; grid-template-columns:1fr auto; gap:1rem 2rem; align-items:start;
+    color:var(--muted); }
+  .credits-brand { display:flex; align-items:center; gap:.7rem; }
+  .credits-brand .mark { width:26px; height:26px; border-radius:8px; flex:none;
+    background:linear-gradient(150deg,#818cf8,var(--accent) 55%,#4f46e5); }
+  .credits-brand b { display:block; font-size:.95rem; letter-spacing:-.01em; color:var(--fg); }
+  .credits-brand span { font-size:.8rem; color:var(--muted); }
+  .credits-links { display:flex; gap:1.1rem; align-items:center; }
+  .credits-links a { color:var(--muted); text-decoration:none; font-size:.85rem; font-weight:500; }
+  .credits-links a:hover { color:var(--fg); }
+  .credits-legal { grid-column:1 / -1; display:flex; justify-content:space-between;
+    gap:1rem; flex-wrap:wrap; font-size:.76rem; color:var(--faint);
+    padding-top:1rem; border-top:1px solid var(--line-soft); }
+  .credits-legal a { color:var(--muted); }
+  @media (max-width:640px) { .credits { grid-template-columns:1fr; }
+    .credits-legal { flex-direction:column; gap:.3rem; } }
+  @media (prefers-reduced-motion:reduce) { *{animation:none !important; scroll-behavior:auto !important;
+    transition:none !important;} }
 
   .help-p { margin:.2rem 0 .6rem; max-width:70ch; }
   .help-p:last-child { margin-bottom:0; }
@@ -231,11 +343,29 @@ const adminHTML = `<!doctype html>
       <div class="navgroup">Integration</div>
       <button class="navlink" data-view="creds"><span class="ic">⚿</span> App credentials</button>
       <div class="navgroup">Help</div>
-      <button class="navlink" data-view="help"><span class="ic">?</span> Guide</button>
+      <button class="navlink" id="guide-toggle" data-view="help" aria-expanded="false">
+        <span class="ic tw" id="guide-caret">▸</span> Guide</button>
+      <div class="subnav" id="guide-sub" hidden>
+        <button class="subnavlink" data-topic="overview">Overview</button>
+        <button class="subnavlink" data-topic="users">Users</button>
+        <button class="subnavlink" data-topic="audit">Audit</button>
+        <button class="subnavlink" data-topic="status">Relay &amp; bridges</button>
+        <button class="subnavlink" data-topic="enroll">Enrol a bridge</button>
+        <button class="subnavlink" data-topic="settings">Settings</button>
+        <button class="subnavlink" data-topic="creds">App credentials</button>
+        <button class="subnavlink" data-topic="signin">Sign-in &amp; landing</button>
+      </div>
     </nav>
     <div class="whoami">
-      <span class="who" id="whoami" title="">—</span>
+      <span class="who" id="whoami" title=""><span class="avatar" id="avatar">R</span><span id="whoami-label">—</span></span>
       <a href="/v1/auth/logout" id="logout">Sign out</a>
+    </div>
+    <div class="sidefoot">
+      <a href="https://github.com/ToolTropolis/Relayent" target="_blank" rel="noopener noreferrer" title="Relayent on GitHub">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+      <span class="ver">v%VERSION%</span>
     </div>
   </aside>
 
@@ -281,9 +411,9 @@ const adminHTML = `<!doctype html>
       <div class="card">
         <h2>At a glance</h2>
         <div class="stat">
-          <div><div class="n" id="s-users">—</div><div class="l">Users</div></div>
-          <div><div class="n" id="s-online">—</div><div class="l">Bridges online</div></div>
-          <div><div class="n" id="s-pending">—</div><div class="l">Pending jobs</div></div>
+          <div class="tile"><div class="n" id="s-users">—</div><div class="l">Users</div></div>
+          <div class="tile"><div class="n" id="s-online">—</div><div class="l">Bridges online</div></div>
+          <div class="tile"><div class="n" id="s-pending">—</div><div class="l">Pending jobs</div></div>
         </div>
       </div>
       <div class="card">
@@ -353,7 +483,7 @@ const adminHTML = `<!doctype html>
     <section id="view-help" class="view">
       <div class="head"><h1>Guide</h1><p>What each section does, and the ideas behind them. For full setup and the API, see the docs linked at the bottom.</p></div>
 
-      <div class="card">
+      <div class="card" id="help-overview">
         <h2>The big picture</h2>
         <p class="help-p">Relayent routes an app's AI request to a <b>CLI subscription running on a user's own
         machine</b> (Claude Code, Codex, Cursor) instead of a paid API key. This relay is <b>multi-tenant</b>:
@@ -364,7 +494,7 @@ const adminHTML = `<!doctype html>
         prompt or the result</b>. That boundary is built into the relay, not a setting.</p>
       </div>
 
-      <div class="card">
+      <div class="card" id="help-users">
         <h2>Users <span class="note muted">— Admin</span></h2>
         <dl class="help-dl">
           <dt>What it is</dt><dd>Everyone with an identity on this relay. A user usually appears automatically the first time they sign in; you can also pre-provision one with <b>Add a user</b>.</dd>
@@ -374,7 +504,7 @@ const adminHTML = `<!doctype html>
         </dl>
       </div>
 
-      <div class="card">
+      <div class="card" id="help-audit">
         <h2>Audit <span class="note muted">— Admin</span></h2>
         <p class="help-p">A running history: who did what, when, on which backend, success or failure, and the
         <b>byte counts</b> of the prompt and result. It deliberately holds <b>no content</b> — you see that a job
@@ -382,7 +512,7 @@ const adminHTML = `<!doctype html>
         “did this user's jobs fail?”.</p>
       </div>
 
-      <div class="card">
+      <div class="card" id="help-status">
         <h2>Relay &amp; bridges <span class="note muted">— Configure</span></h2>
         <dl class="help-dl">
           <dt>At a glance</dt><dd>Totals across the relay: how many users, how many bridges are online right now, and how many jobs are pending.</dd>
@@ -390,7 +520,7 @@ const adminHTML = `<!doctype html>
         </dl>
       </div>
 
-      <div class="card">
+      <div class="card" id="help-enroll">
         <h2>Enrol a bridge <span class="note muted">— Configure</span></h2>
         <p class="help-p">A bridge proves who it is with a credential it earns through <b>enrolment</b>. Pick the
         user, click <b>Mint token</b>, and send them the one-time token out-of-band (chat, email). They run
@@ -398,7 +528,7 @@ const adminHTML = `<!doctype html>
         The token is shown <b>once</b> and expires — mint a fresh one if it lapses.</p>
       </div>
 
-      <div class="card">
+      <div class="card" id="help-settings">
         <h2>Settings <span class="note muted">— Configure</span></h2>
         <p class="help-p">A <b>read-only</b> view of how this relay is actually running: version, whether it's
         behind a trusted proxy, whether the multi-tenant store is on, and the OIDC identity settings (issuer,
@@ -407,7 +537,7 @@ const adminHTML = `<!doctype html>
         editing config from this screen is intentionally not offered.</p>
       </div>
 
-      <div class="card">
+      <div class="card" id="help-creds">
         <h2>App credentials <span class="note muted">— Integration</span></h2>
         <p class="help-p">A key an <b>app</b> (e.g. EngageHub) uses to enqueue jobs on users' behalf. Issue one
         per app; the secret (<code>&lt;id&gt;.&lt;secret&gt;</code>) is shown <b>once</b> — copy it then. The app sends it as
@@ -415,7 +545,7 @@ const adminHTML = `<!doctype html>
         <b>Revoke</b> kills a credential instantly. The relay stores only a hash, never the secret.</p>
       </div>
 
-      <div class="card">
+      <div class="card" id="help-signin">
         <h2>Signing in &amp; where you land</h2>
         <p class="help-p">Everyone signs in at <code>/login</code> — “Sign in with your provider”, or the bootstrap
         admin token. Afterwards you're sent to the right place automatically: <b>admins</b> to this console,
@@ -430,6 +560,26 @@ const adminHTML = `<!doctype html>
         (the integration contract). This console never shows prompt or result content — by design.</p>
       </div>
     </section>
+
+    <footer class="credits">
+      <div class="credits-brand">
+        <span class="mark" aria-hidden="true"></span>
+        <div>
+          <b>Relayent</b>
+          <span>Use the AI subscription you already pay for — from anywhere.</span>
+        </div>
+      </div>
+      <nav class="credits-links" aria-label="Project links">
+        <a href="https://github.com/ToolTropolis/Relayent" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/ToolTropolis/Relayent/blob/main/API.md" target="_blank" rel="noopener noreferrer">API</a>
+        <a href="https://github.com/ToolTropolis/Relayent/blob/main/INSTALL.md" target="_blank" rel="noopener noreferrer">Install</a>
+        <a href="https://github.com/ToolTropolis/Relayent/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">Security</a>
+      </nav>
+      <div class="credits-legal">
+        <span>Relayent v%VERSION% · MIT License</span>
+        <span>Open source on <a href="https://github.com/ToolTropolis/Relayent" target="_blank" rel="noopener noreferrer">github.com/ToolTropolis/Relayent</a></span>
+      </div>
+    </footer>
   </main>
 </div>
 
@@ -487,7 +637,9 @@ function go(view) {
   for (const v of VIEWS) $("view-" + v).classList.toggle("active", v === view);
   for (const b of document.querySelectorAll(".navlink"))
     b.classList.toggle("active", b.dataset.view === view);
-  if (location.hash !== "#" + view) location.hash = view;
+  // Don't clobber a deep hash like #help/users when routing to its base view.
+  const cur = location.hash.slice(1);
+  if (cur !== view && !cur.startsWith(view + "/")) location.hash = view;
   loadView(view);
 }
 async function loadView(view) {
@@ -709,7 +861,39 @@ $("addapp").onclick = async () => {
 };
 for (const b of document.querySelectorAll(".navlink"))
   b.onclick = () => go(b.dataset.view);
-window.addEventListener("hashchange", () => go(location.hash.slice(1)));
+
+/* Guide is a collapsible tree: the parent toggles the sub-tree AND opens the
+   Guide view; each child opens the Guide and scrolls to that topic's card. */
+function setGuideOpen(open) {
+  $("guide-sub").hidden = !open;
+  $("guide-toggle").setAttribute("aria-expanded", open ? "true" : "false");
+  $("guide-caret").textContent = open ? "▾" : "▸";
+}
+$("guide-toggle").addEventListener("click", () => {
+  const opening = $("guide-sub").hidden;
+  setGuideOpen(opening);
+  go("help");
+});
+function showTopic(topic) {
+  setGuideOpen(true);
+  go("help");
+  for (const s of document.querySelectorAll(".subnavlink"))
+    s.classList.toggle("active", s.dataset.topic === topic);
+  const el = $("help-" + topic);
+  if (el) {
+    el.scrollIntoView({behavior: "smooth", block: "start"});
+    el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
+  }
+}
+for (const s of document.querySelectorAll(".subnavlink"))
+  s.onclick = () => { showTopic(s.dataset.topic); location.hash = "help/" + s.dataset.topic; };
+
+window.addEventListener("hashchange", () => routeHash());
+function routeHash() {
+  const h = location.hash.slice(1);
+  if (h.startsWith("help/")) { showTopic(h.slice(5)); return; }
+  go(h);
+}
 
 /* Pick up a bootstrap token handed over from /login via the URL fragment
    (#token=...). The fragment is never sent to the server; we read it, keep the
@@ -730,8 +914,8 @@ async function boot() {
   try {
     await api("GET", "/v1/admin/users");
     showApp();
-    $("whoami").textContent = "Signed in";
-    go(location.hash.slice(1) || "users");
+    $("whoami-label").textContent = "Signed in";
+    if (location.hash.slice(1)) routeHash(); else go("users");
   } catch (e) { if (e.message !== "unauthorized") banner("Error: " + e.message, "bad"); }
 }
 boot();
