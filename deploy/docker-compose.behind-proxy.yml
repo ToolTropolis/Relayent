@@ -52,6 +52,11 @@ services:
       # relay refuses to start when network-reachable. Remove once a real OIDC
       # admin exists. In .env, never inline.
       RELAYENT_ADMIN_TOKEN: ${RELAYENT_ADMIN_TOKEN:-}
+      # Stable HMAC key for admin session cookies. If unset the relay picks a
+      # random key per process, so every restart/redeploy invalidates all
+      # sessions (everyone gets logged out). Set it to keep sessions valid across
+      # deploys. In .env, never inline.
+      RELAYENT_SESSION_KEY: ${RELAYENT_SESSION_KEY:-}
       # The proxy terminates TLS and is trusted, so honour its X-Forwarded-*.
       RELAYENT_TRUST_PROXY: '1'
       # OIDC (optional, added after its live flow is verified against a real

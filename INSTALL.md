@@ -941,9 +941,15 @@ first; the threat model changes.
 ```bash
 RELAYENT_DATA_DIR=/var/lib/relayent \           # persistence (users, bindings, audit)
 RELAYENT_ADMIN_TOKEN=<strong-token> \           # bootstrap admin (>=24 chars; keygen)
+RELAYENT_SESSION_KEY=<stable-secret> \          # signs admin sessions — SET THIS (see below)
 RELAYENT_PAIRING_KEY=<existing-key> \           # keep for a no-downtime migration (below)
   relayent-relay
 ```
+
+> **Set `RELAYENT_SESSION_KEY` to a stable value.** It's the HMAC key for admin session
+> cookies. If you leave it unset, the relay generates a fresh random key every time the process
+> starts — so **every restart or redeploy logs everyone out**. Any stable secret ≥16 chars works
+> (32+ recommended); generate one with `head -c 36 /dev/urandom | base64` and keep it in `.env`.
 
 For real human admins (recommended), also configure OIDC — the first person to log in becomes
 admin:
