@@ -94,6 +94,14 @@ credentials are `<id>.<secret>`; only `sha256(secret)` is stored, compared const
 (`verifySecret`). The bootstrap admin token is a skeleton key — enforce the ≥24-char floor on a
 network-reachable relay.
 
+**12. Admin scope is granted, never assumed; humans sign in on one surface.** OIDC login is at
+`/login` (`login.go`); the callback (`oidc.go`) routes by role — admin→`/admin`, user→`/`. The
+**first** stored user bootstraps to admin (`CountUsers()==0`); all others need explicit promotion
+via `POST /v1/admin/users/{sub}/role`. `UpsertUser` **preserves** an existing role, so a login
+can't self-promote — do not change that. An admin can't self-demote/self-delete (`admin.go`
+guards). The admin API (`admin.go`) and console (`adminpage.go`) never return content;
+`GET /v1/admin/config` returns non-secret config only (booleans for whether secrets are set).
+
 ## House style
 
 **Comments explain *why*, never *what*.** The code shows what. A comment earns its place by
@@ -125,8 +133,9 @@ return fmt.Errorf("refusing to start: RELAYENT_PAIRING_KEY is not set and %s is 
 tell "CLI missing" from "not implemented". Add the name to `knownBackends` in
 `relay/security.go` or the relay will drop it. Set `cmd.Dir = req.WorkDir`.
 
-**Wire types:** `internal/api/types.go` and `openapi.yaml` must stay in step. Verify the spec
-against live responses rather than assuming — a field diff has caught real drift here.
+**Wire types:** `internal/api/types.go` and `openapi.yaml` must stay in step, including the
+admin/auth surface (`/v1/admin/*`, `/v1/auth/*`) and the `/login` + `/admin` HTML pages. Verify
+the spec against live responses rather than assuming — a field diff has caught real drift here.
 
 ---
 

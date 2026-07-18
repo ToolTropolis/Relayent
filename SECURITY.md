@@ -151,6 +151,17 @@ scope — it can mint enrollment tokens and app credentials for any user. Treat 
 pairing key: strong (the relay enforces ≥24 chars when network-reachable), secret, and ideally
 removed once a real OIDC admin exists. Anyone holding it owns the control plane.
 
+**Sign-in is one surface, and admin is granted, not assumed.** Humans authenticate only at the
+`/login` page (OIDC, or the bootstrap token); the OIDC callback then routes by role — an admin to
+`/admin`, a regular user to `/`. The **first user ever to sign in becomes the admin**; everyone
+after is a plain user with no admin scope until an admin promotes them. Role changes go *only*
+through `POST /v1/admin/users/{sub}/role` — a normal login can never self-promote, because an
+existing user's stored role is preserved on login. An admin cannot demote or delete themselves,
+so the last admin can't be locked out by accident. One operational caveat: if any user record
+exists *before* the operator's own first sign-in (e.g. one pre-provisioned via
+`POST /v1/admin/users`), that sign-in is no longer the first user and will **not** bootstrap to
+admin — promote it explicitly. Don't leave stray/test users on a live relay.
+
 **Machine credentials are bearer secrets, per identity.** A bridge credential is bound to one
 user and can only claim that user's jobs; an app credential can enqueue for any user it names.
 So a leaked **app** credential is higher-value than a leaked bridge credential — it can spend

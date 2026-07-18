@@ -242,6 +242,29 @@ docker compose up -d
 The relay container is never published to the host — only Caddy's `443` is exposed, so TLS
 cannot be bypassed.
 
+## Multi-user (multi-tenant)
+
+By default one shared pairing key means one shared subscription — whoever holds the key spends
+that one account's quota. For **many users, each on their own subscription, isolated from one
+another**, run the relay multi-tenant: set `RELAYENT_DATA_DIR` (a persistent volume) and,
+normally, OIDC. Then:
+
+- **Humans sign in at `/login`** — "Sign in with Google" (or your OIDC provider), or a bootstrap
+  admin token. The **first person to sign in becomes the admin**; the rest are regular users.
+  After login you're routed by role: admins to the **`/admin` console**, users to their own
+  status page.
+- **The `/admin` console** manages users (create, promote/demote, disable, delete), enrolls
+  bridges, issues and revokes app credentials, and shows per-user activity and an audit log —
+  **never any prompt or result content**.
+- **Each user runs their own bridge**, enrolled with a one-time token, bound to only their jobs.
+- **Apps** authenticate with an issued **app credential** and name `target_user` per job; a job
+  for `alice` runs only on alice's bridge/subscription.
+
+Enterprise SSO (Azure AD, Okta, any OIDC issuer) is a change of issuer URL — same protocol. The
+relay stores **no passwords** (OIDC) and only **hashed** machine credentials plus a non-secret
+user directory. Full setup is in [INSTALL.md](INSTALL.md#multi-user-multi-tenant-mode); the
+changed threat model is in [SECURITY.md](SECURITY.md#multi-tenant-model-the-changed-threat-model).
+
 ## Security
 
 **The pairing key is the only thing between the internet and your CLI subscription.** Anyone
@@ -267,7 +290,7 @@ protect against](SECURITY.md#what-relayent-does-not-protect-against).
 
 | Document | What it covers |
 |---|---|
-| **[API.md](API.md)** | Integrating an app: every call, what the numbers mean, the traps, a runnable client, and a verification checklist |
+| **[API.md](API.md)** | Integrating an app: every call, what the numbers mean, the traps, a runnable client, a verification checklist, and the admin / multi-tenant surface |
 | **[INSTALL.md](INSTALL.md)** | Setup, start to finish: bridge, relay (localhost / private / public+TLS), verification, configuration, rotation, troubleshooting |
 | **[SECURITY.md](SECURITY.md)** | Threat model, the deploy guide, and **what Relayent does not protect against** |
 | **[AGENTS.md](AGENTS.md)** | Conventions and security invariants for AI agents working on this codebase |

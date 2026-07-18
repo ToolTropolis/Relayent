@@ -955,6 +955,34 @@ RELAYENT_OIDC_REDIRECT_URL=https://relay.example.com/v1/auth/callback \
 RELAYENT_OIDC_HOSTED_DOMAIN=yourcompany.com      # lock to your Workspace domain
 ```
 
+All OIDC vars are all-or-nothing; the redirect URL must exactly match one registered on the
+OAuth client. (Changing `.env` needs `docker compose up -d`, not `restart` — `restart` reuses
+the old environment.)
+
+### Sign in and the admin console
+
+Humans sign in at the **`/login`** page — open `https://relay.example.com/login` in a browser.
+It offers "Sign in with Google" (or your configured provider) and a field for the bootstrap
+admin token. On success you're routed **by role**: an admin lands on the **`/admin`** console, a
+regular user on **`/`** (their own status page).
+
+The **first person to sign in becomes the admin.** Everyone after is a regular user until an
+admin promotes them.
+
+> **Caveat — who becomes admin.** "First user" means the first record in the store. If you
+> pre-provision anyone with `POST /v1/admin/users` (or leave a test user) *before* you sign in,
+> your sign-in is no longer the first user and you'll land on `/` as a regular user, not `/admin`.
+> If that happens, promote yourself with the bootstrap token:
+> ```bash
+> curl -sXPOST $RELAY/v1/admin/users/<your-sub>/role -H "$ADMIN" -d '{"role":"admin"}'
+> ```
+> Find `<your-sub>` in `GET /v1/admin/users`. Then reload `/admin`.
+
+The `/admin` console is a full dashboard — a grouped sidebar for **Users** (create, promote/demote,
+disable, delete, enroll a bridge), **Audit**, **Relay & bridges** status, **Enrol a bridge**, a
+read-only **Settings** view of the effective config, and **App credentials**. Every action goes
+through the `/v1/admin/*` API below; the console never shows prompt or result content.
+
 ### Onboard a user
 
 ```bash
@@ -1001,12 +1029,26 @@ The legacy pairing key keeps working the whole time, so migrate gradually:
 
 This mirrors the key-rotation overlap: old and new auth coexist until you drop the old.
 
-### Admin visibility
+### Manage users and visibility
+
+Everything here is also in the `/admin` console; the curl forms are for scripting.
 
 ```bash
-curl -s $RELAY/v1/admin/users -H "$ADMIN"    # per-user job counts, bridge presence
-curl -s $RELAY/v1/admin/audit -H "$ADMIN"    # history: who/when/backend/status — NO content
+# Visibility (activity only — never prompt/result content)
+curl -s $RELAY/v1/admin/users  -H "$ADMIN"    # per-user job counts, bridge presence, role
+curl -s $RELAY/v1/admin/audit  -H "$ADMIN"    # history: who/when/backend/status — NO content
+curl -s $RELAY/v1/admin/config -H "$ADMIN"    # effective relay config — NO secret values
+
+# Lifecycle
+curl -sXPOST   "$RELAY/v1/admin/users/alice/role"          -H "$ADMIN" -d '{"role":"admin"}'  # promote
+curl -sXPOST   "$RELAY/v1/admin/users/alice/role"          -H "$ADMIN" -d '{"role":"user"}'   # demote
+curl -sXPOST   "$RELAY/v1/admin/users/alice/disabled"      -H "$ADMIN"                         # disable
+curl -sXPOST   "$RELAY/v1/admin/users/alice/disabled?disabled=false" -H "$ADMIN"               # re-enable
+curl -sXDELETE "$RELAY/v1/admin/users/alice"               -H "$ADMIN"                         # delete
+curl -sXPOST   "$RELAY/v1/admin/app-creds/<id>/revoke"     -H "$ADMIN"                         # revoke a cred
 ```
 
-The admin sees *activity*, never prompt or result content — that boundary is structural.
+The admin sees *activity*, never prompt or result content — that boundary is structural. Role
+changes go only through the `/role` endpoint (a login can't self-promote), and an admin cannot
+demote or delete themselves.
 

@@ -184,6 +184,17 @@ const adminHTML = `<!doctype html>
   .view { display:none; }
   .view.active { display:block; }
 
+  .help-p { margin:.2rem 0 .6rem; max-width:70ch; }
+  .help-p:last-child { margin-bottom:0; }
+  .help-dl { display:grid; grid-template-columns:150px 1fr; gap:.5rem .9rem; margin:0; max-width:80ch; }
+  .help-dl dt { color:var(--accent); font-weight:600; }
+  .help-dl dd { margin:0; }
+  .help-dl dt,.help-dl dd { padding-bottom:.5rem; border-bottom:1px solid var(--line); }
+  .help-dl dt:last-of-type,.help-dl dd:last-child { border-bottom:0; padding-bottom:0; }
+  @media (max-width:760px) { .help-dl { grid-template-columns:1fr; gap:.15rem; }
+    .help-dl dt { border-bottom:0; padding-bottom:0; margin-top:.6rem; }
+    .help-dl dd { border-bottom:1px solid var(--line); } }
+
   /* Sign-in takes the whole shell (no sidebar) until authenticated. */
   .signwrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:1rem; }
   .signcard { max-width:420px; width:100%; }
@@ -219,6 +230,8 @@ const adminHTML = `<!doctype html>
       <button class="navlink" data-view="settings"><span class="ic">⚙</span> Settings</button>
       <div class="navgroup">Integration</div>
       <button class="navlink" data-view="creds"><span class="ic">⚿</span> App credentials</button>
+      <div class="navgroup">Help</div>
+      <button class="navlink" data-view="help"><span class="ic">?</span> Guide</button>
     </nav>
     <div class="whoami">
       <span class="who" id="whoami" title="">—</span>
@@ -335,6 +348,88 @@ const adminHTML = `<!doctype html>
         </table></div>
       </div>
     </section>
+
+    <!-- HELP -->
+    <section id="view-help" class="view">
+      <div class="head"><h1>Guide</h1><p>What each section does, and the ideas behind them. For full setup and the API, see the docs linked at the bottom.</p></div>
+
+      <div class="card">
+        <h2>The big picture</h2>
+        <p class="help-p">Relayent routes an app's AI request to a <b>CLI subscription running on a user's own
+        machine</b> (Claude Code, Codex, Cursor) instead of a paid API key. This relay is <b>multi-tenant</b>:
+        many users, each running their own <b>bridge</b>, each on their own subscription, isolated from one
+        another. A job addressed to a user runs only on that user's bridge — never anyone else's.</p>
+        <p class="help-p"><b>You are the operator.</b> You manage users, enrol their bridges, and issue app
+        credentials. You can see <i>activity</i> — who ran what, when, on which backend — but <b>never the
+        prompt or the result</b>. That boundary is built into the relay, not a setting.</p>
+      </div>
+
+      <div class="card">
+        <h2>Users <span class="note muted">— Admin</span></h2>
+        <dl class="help-dl">
+          <dt>What it is</dt><dd>Everyone with an identity on this relay. A user usually appears automatically the first time they sign in; you can also pre-provision one with <b>Add a user</b>.</dd>
+          <dt>Roles</dt><dd><b>admin</b> can manage everything here; <b>user</b> can only run their own jobs and see their own status. The <b>first person ever to sign in becomes the admin</b>; everyone after is a user until you promote them (<b>Make admin</b> / <b>Demote</b>).</dd>
+          <dt>Enrol</dt><dd>Mints a one-time token for that user to pair their bridge — see “Enrol a bridge”.</dd>
+          <dt>Disable / Delete</dt><dd><b>Disable</b> blocks a user's jobs immediately but keeps the record; <b>Delete</b> removes it. You can't disable, demote, or delete <b>yourself</b> — a safeguard so the last admin can't be locked out.</dd>
+        </dl>
+      </div>
+
+      <div class="card">
+        <h2>Audit <span class="note muted">— Admin</span></h2>
+        <p class="help-p">A running history: who did what, when, on which backend, success or failure, and the
+        <b>byte counts</b> of the prompt and result. It deliberately holds <b>no content</b> — you see that a job
+        ran and how big it was, never what it said. This is the record to check for “is it being used?” and
+        “did this user's jobs fail?”.</p>
+      </div>
+
+      <div class="card">
+        <h2>Relay &amp; bridges <span class="note muted">— Configure</span></h2>
+        <dl class="help-dl">
+          <dt>At a glance</dt><dd>Totals across the relay: how many users, how many bridges are online right now, and how many jobs are pending.</dd>
+          <dt>Bridge presence</dt><dd>Per user: is their bridge currently connected, how many bridges they've enrolled, and their pending jobs. <b>Online</b> means the bridge polled recently; <b>offline</b> usually means that user's machine is asleep or the bridge isn't running.</dd>
+        </dl>
+      </div>
+
+      <div class="card">
+        <h2>Enrol a bridge <span class="note muted">— Configure</span></h2>
+        <p class="help-p">A bridge proves who it is with a credential it earns through <b>enrolment</b>. Pick the
+        user, click <b>Mint token</b>, and send them the one-time token out-of-band (chat, email). They run
+        <code>relayent-bridge setup</code> and paste it; their bridge redeems it once and is then bound to them.
+        The token is shown <b>once</b> and expires — mint a fresh one if it lapses.</p>
+      </div>
+
+      <div class="card">
+        <h2>Settings <span class="note muted">— Configure</span></h2>
+        <p class="help-p">A <b>read-only</b> view of how this relay is actually running: version, whether it's
+        behind a trusted proxy, whether the multi-tenant store is on, and the OIDC identity settings (issuer,
+        client id, redirect). <b>No secret values are ever shown</b> — only whether a pairing key or admin token
+        is set. To change any of it, edit the relay's <code>.env</code> and run <code>docker compose up -d</code>;
+        editing config from this screen is intentionally not offered.</p>
+      </div>
+
+      <div class="card">
+        <h2>App credentials <span class="note muted">— Integration</span></h2>
+        <p class="help-p">A key an <b>app</b> (e.g. EngageHub) uses to enqueue jobs on users' behalf. Issue one
+        per app; the secret (<code>&lt;id&gt;.&lt;secret&gt;</code>) is shown <b>once</b> — copy it then. The app sends it as
+        a bearer token and names the target user on each job, so a request for Alice runs on Alice's subscription.
+        <b>Revoke</b> kills a credential instantly. The relay stores only a hash, never the secret.</p>
+      </div>
+
+      <div class="card">
+        <h2>Signing in &amp; where you land</h2>
+        <p class="help-p">Everyone signs in at <code>/login</code> — “Sign in with your provider”, or the bootstrap
+        admin token. Afterwards you're sent to the right place automatically: <b>admins</b> to this console,
+        <b>regular users</b> to their own status page at <code>/</code>. Sign out from the bottom of the sidebar.</p>
+      </div>
+
+      <div class="card">
+        <h2>Learn more</h2>
+        <p class="help-p">Full operator setup, migration, and the API live in the project docs:
+        <b>INSTALL.md</b> (standing up the relay and onboarding users), <b>SECURITY.md</b> (the multi-tenant
+        threat model and what Relayent does <i>not</i> protect against), <b>API.md</b> and <b>openapi.yaml</b>
+        (the integration contract). This console never shows prompt or result content — by design.</p>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -386,7 +481,7 @@ async function api(method, path, body) {
 function showApp() { $("shell").style.display = "grid"; }
 
 /* ---- view router ---- */
-const VIEWS = ["users","audit","status","enroll","settings","creds"];
+const VIEWS = ["users","audit","status","enroll","settings","creds","help"];
 function go(view) {
   if (!VIEWS.includes(view)) view = "users";
   for (const v of VIEWS) $("view-" + v).classList.toggle("active", v === view);

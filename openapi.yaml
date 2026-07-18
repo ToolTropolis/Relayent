@@ -14,7 +14,10 @@ info:
     Two deployment models: SINGLE-KEY (one shared pairing key, stateless) and
     MULTI-TENANT (RELAYENT_DATA_DIR + OIDC: per-user identity, isolation, admin).
     The endpoints under /v1/auth, /v1/enroll and /v1/admin exist only in the
-    multi-tenant model.
+    multi-tenant model. Humans sign in at the /login page (OIDC or a bootstrap
+    admin token); the OIDC callback then routes by role — an admin to the /admin
+    console, a regular user to / (their own status page). /login and /admin are
+    HTML pages, not part of this JSON contract.
 
     Typical consumer flow:
       1. GET  /v1/bridge/online   -> fail fast if no bridge is polling
@@ -120,6 +123,40 @@ paths:
         "401": { description: Invalid, expired, or already-used token }
         "404": { description: Enrollment not enabled (no store) }
         "429": { $ref: "#/components/responses/Unauthorized" }
+  /v1/auth/login:
+    get:
+      summary: Begin OIDC sign-in — redirects to the provider (multi-tenant, browser)
+      description: |
+        Browser endpoint. Sets a short-lived signed state cookie and 302-redirects
+        to the configured OIDC provider. Present only when OIDC is configured. Not
+        a JSON API — used by the /login page.
+      security: []
+      responses:
+        "302": { description: Redirect to the OIDC provider }
+        "404": { description: OIDC not configured }
+  /v1/auth/callback:
+    get:
+      summary: OIDC redirect target — completes sign-in, redirects by role (multi-tenant, browser)
+      description: |
+        The provider redirects here with code+state. The relay verifies state, the
+        id_token (iss/aud/exp, and hd if a hosted domain is set), upserts the user
+        (the FIRST-EVER user becomes admin), sets a session cookie, and redirects by
+        role: an admin to /admin, a regular user to / (their own status page).
+      security: []
+      parameters:
+        - { name: code, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+      responses:
+        "302": { description: Signed in — redirected to /admin or / by role }
+        "400": { description: Invalid or expired login state }
+        "401": { description: id_token verification failed }
+        "403": { description: Account outside the permitted hosted domain }
+  /v1/auth/logout:
+    get:
+      summary: Clear the session cookie (multi-tenant, browser)
+      security: []
+      responses:
+        "302": { description: Session cleared — redirected to / }
   /v1/admin/users:
     get:
       summary: List users with per-user activity — NO content (admin)
@@ -129,10 +166,63 @@ paths:
         "403": { description: Not an admin }
     post:
       summary: Create or pre-provision a user (admin)
+      description: |
+        Normally a user is created automatically on first OIDC login; this
+        pre-provisions one. NOTE: any user existing before the operator's own first
+        OIDC login means that login is not the first user, so it does NOT bootstrap
+        to admin — promote it explicitly with POST /v1/admin/users/{sub}/role.
       responses:
         "201": { description: Created }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { description: Not an admin }
+  /v1/admin/users/{sub}/role:
+    post:
+      summary: Grant or revoke admin for a user (admin)
+      description: |
+        The ONLY path that changes a role — a normal OIDC login cannot self-promote
+        (an existing user's stored role is preserved on login). An admin cannot
+        demote themselves, so the last admin cannot be locked out by accident.
+      parameters:
+        - { name: sub, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetUserRoleRequest" }
+      responses:
+        "200": { description: Role changed }
+        "400": { description: Invalid role, or admin attempted to demote themselves }
+        "403": { description: Not an admin }
+        "404": { description: Unknown user }
+  /v1/admin/users/{sub}/disabled:
+    post:
+      summary: Disable or re-enable a user (admin)
+      description: |
+        A disabled user's bridge and app-targeted jobs are refused immediately
+        (role/disabled is re-checked per request).
+      parameters:
+        - { name: sub, in: path, required: true, schema: { type: string } }
+        - name: disabled
+          in: query
+          schema: { type: string, enum: ["true", "false"] }
+          description: Defaults to true (disable). Pass false to re-enable.
+      responses:
+        "200": { description: Disabled/enabled }
+        "403": { description: Not an admin }
+        "404": { description: Unknown user }
+  /v1/admin/users/{sub}:
+    delete:
+      summary: Delete a user record (admin)
+      description: |
+        Removes the user. Bridge bindings and app credentials are NOT auto-revoked —
+        revoke those separately. An admin cannot delete themselves.
+      parameters:
+        - { name: sub, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Deleted }
+        "400": { description: An admin attempted to delete themselves }
+        "403": { description: Not an admin }
+        "404": { description: Unknown user }
   /v1/admin/enroll-tokens:
     post:
       summary: Mint a one-time enrollment token for a user (admin)
@@ -157,6 +247,31 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CreateAppCredResponse" }
+        "403": { description: Not an admin }
+  /v1/admin/app-creds/{id}/revoke:
+    post:
+      summary: Revoke an app credential by its public id (admin)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Revoked }
+        "403": { description: Not an admin }
+        "404": { description: Unknown credential }
+  /v1/admin/config:
+    get:
+      summary: Read-only snapshot of the relay's effective config — NO secrets (admin)
+      description: |
+        The relay's effective configuration for the Configure view: version, listen,
+        trust-proxy, store/data-dir, and non-secret OIDC identifiers (issuer, client
+        id, redirect, provider). Secret VALUES are never returned — only booleans for
+        whether the pairing key and admin token are set. Config is env/compose-driven;
+        this endpoint reads it, it does not change it.
+      responses:
+        "200":
+          description: Effective configuration (no secret values)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminConfig" }
         "403": { description: Not an admin }
   /v1/admin/audit:
     get:
@@ -277,7 +392,34 @@ components:
     PairingKey:
       type: http
       scheme: bearer
-      description: Per-tenant pairing key shared by the consuming app and the bridge.
+      description: |
+        Single-key model, or legacy during migration: one shared pairing key held by
+        the consuming app and the bridge. Possession is authorization.
+    AppKey:
+      type: http
+      scheme: bearer
+      description: |
+        Multi-tenant: an app credential "<id>.<secret>" issued by an admin. Scoped
+        (usually enqueue-only) and names target_user per job. Stored hashed.
+    BridgeCredential:
+      type: http
+      scheme: bearer
+      description: |
+        Multi-tenant: a bridge's own credential "<id>.<secret>", obtained by redeeming
+        a one-time enrollment token at /v1/enroll. Bound to one user; self-routes.
+    AdminToken:
+      type: http
+      scheme: bearer
+      description: |
+        Multi-tenant bootstrap: RELAYENT_ADMIN_TOKEN grants admin scope directly for
+        the /v1/admin/* API. Intended for bootstrap before a real OIDC admin exists.
+    OIDCSession:
+      type: apiKey
+      in: cookie
+      name: relayent_session
+      description: |
+        Multi-tenant: an HMAC-signed session cookie set after OIDC sign-in at /login.
+        Carries the human's identity; admin scope depends on the user's stored role.
   responses:
     Unauthorized:
       description: Missing or invalid pairing key
@@ -438,6 +580,28 @@ components:
       properties:
         app_id: { type: string }
         credential: { type: string, description: "<id>.<secret>; shown once, save it" }
+    SetUserRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [admin, user] }
+    AdminConfig:
+      type: object
+      description: Effective relay config — NO secret values, only whether each is set.
+      properties:
+        version: { type: string }
+        listen: { type: string, example: ":8787" }
+        trust_proxy: { type: boolean }
+        store_enabled: { type: boolean, description: Multi-tenant control plane on /data }
+        data_dir: { type: string }
+        pairing_key_set: { type: boolean, description: Legacy shared key accepted (value never shown) }
+        admin_token_set: { type: boolean, description: Bootstrap admin token configured }
+        oidc_enabled: { type: boolean }
+        oidc_issuer: { type: string, description: Non-secret }
+        oidc_client_id: { type: string, description: Non-secret public identifier }
+        oidc_redirect: { type: string }
+        oidc_provider: { type: string, example: Google }
+        hosted_domain: { type: string, description: Workspace lock, if any }
     ErrorResponse:
       type: object
       properties:
