@@ -35,8 +35,10 @@ func (s *server) statusPage(w http.ResponseWriter, r *http.Request) {
 	// pairing-key prompt — that prompt asks for a credential OIDC deployments
 	// don't hand out, so an anonymous visitor would see an unfillable form.
 	// Route by session instead: an admin goes to their console, a signed-in
-	// user sees their own status page (the pairing-key legacy view), and anyone
-	// not signed in is sent to /login. Single-key mode (no store) is unchanged.
+	// regular user sees their OWN status page, and anyone not signed in is sent
+	// to /login. The pairing-key status page remains reachable at /status for
+	// ops who still hold a key. Single-key mode (no store) is unchanged: "/"
+	// serves the pairing-key page directly.
 	if s.store.Enabled() && s.oidc != nil {
 		p := s.oidc.principalFromSession(r)
 		if p == nil {
@@ -47,10 +49,30 @@ func (s *server) statusPage(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/admin", http.StatusFound)
 			return
 		}
-		// A signed-in non-admin falls through to the status page below — this
-		// is the "/" that /login sends regular users to, so it must render here
-		// rather than redirect, or the two would bounce each other in a loop.
+		// A signed-in non-admin gets their own scoped status page. It must
+		// RENDER here (not redirect), because /login sends regular users to
+		// "/" — a redirect back would bounce the two in a loop.
+		s.renderPage(w, mePageHTML)
+		return
 	}
+	s.renderPage(w, statusHTML)
+}
+
+// classicStatusPage serves the pairing-key global status dashboard at /status,
+// in both modes, for operators who authenticate with a pairing key rather than
+// an OIDC session. On "/" this page is only reached in single-key mode.
+func (s *server) classicStatusPage(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/status" {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	s.renderPage(w, statusHTML)
+}
+
+// renderPage writes a nonce'd, no-store HTML page under the status CSP. The
+// page's own script runs under a per-request nonce rather than 'unsafe-inline'
+// (which would also authorise injected inline event handlers).
+func (s *server) renderPage(w http.ResponseWriter, page string) {
 	nonce, err := scriptNonce()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
@@ -61,7 +83,7 @@ func (s *server) statusPage(w http.ResponseWriter, r *http.Request) {
 			"connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(strings.Replace(statusHTML, "%NONCE%", nonce, 1)))
+	_, _ = w.Write([]byte(strings.Replace(page, "%NONCE%", nonce, 1)))
 }
 
 // scriptNonce returns a fresh 128-bit CSP nonce. It must be unpredictable and
