@@ -108,6 +108,11 @@ const demoHTML = `<!doctype html>
   .bubble.think { color:var(--muted); }
   .empty { color:var(--faint); text-align:center; margin:auto; max-width:36ch; }
 
+  .notice { display:flex; align-items:center; gap:.5rem; margin:0 auto .2rem; max-width:820px;
+    padding:.5rem .8rem; font-size:.8rem; color:var(--muted); background:var(--card-2);
+    border:1px solid var(--line); border-radius:10px; }
+  .notice svg { width:15px; height:15px; flex:none; fill:none; stroke:var(--muted); stroke-width:1.6; }
+
   .suggestions { display:flex; flex-wrap:wrap; gap:.5rem; padding:.2rem 0 .8rem; }
   .chip { background:var(--card-2); border:1px solid var(--line); color:var(--fg-dim);
     font:inherit; font-size:.84rem; padding:.4rem .75rem; border-radius:999px; cursor:pointer;
@@ -154,6 +159,11 @@ const demoHTML = `<!doctype html>
       <select id="model"><option>loading…</option></select>
     </span>
   </header>
+
+  <div class="notice" role="note">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="8" r="0.6" fill="currentColor" stroke="none"/></svg>
+    <span>Heads up — this is a small demo box, so replies can take a little longer than you'd see on real hardware. It's the same models, just patient.</span>
+  </div>
 
   <main>
     <div id="log">
