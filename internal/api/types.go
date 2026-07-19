@@ -202,6 +202,10 @@ type AdminBackend struct {
 	ReportingBridges int  `json:"reporting_bridges"`
 	InstalledBridges int  `json:"installed_bridges"`
 	ReadyBridges     int  `json:"ready_bridges"`
+
+	// Hosts are the bridge machine names that reported this backend, so the admin
+	// UI can name the actual machine to act on rather than say "the bridge".
+	Hosts []string `json:"hosts,omitempty"`
 }
 
 // SetBackendRequest enables or disables one backend globally.

@@ -17,6 +17,7 @@ package main
 import (
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -299,11 +300,16 @@ func (s *server) adminListBackends(w http.ResponseWriter, r *http.Request, p *Pr
 		return
 	}
 	// Roll up what bridges actually report per backend, across all users. Policy
-	// (Enabled) is global; readiness comes from each bridge's capability report.
-	type rollup struct{ supported, reporting, installed, ready int }
+	// (Enabled) is global; readiness comes from each bridge's capability report. We
+	// also collect the reporting hosts so the guidance can name the actual machine
+	// ("on njPRD, install …") instead of a vague "the bridge machine".
+	type rollup struct {
+		supported, reporting, installed, ready int
+		hosts                                  map[string]bool
+	}
 	agg := map[string]*rollup{}
 	for _, name := range knownBackendList {
-		agg[name] = &rollup{}
+		agg[name] = &rollup{hosts: map[string]bool{}}
 	}
 	var latest time.Time // most-recent bridge report, so the UI can show freshness
 	if users, err := s.store.ListUsers(); err == nil {
@@ -321,6 +327,9 @@ func (s *server) adminListBackends(w http.ResponseWriter, r *http.Request, p *Pr
 					continue
 				}
 				r.reporting++
+				if caps.Hostname != "" {
+					r.hosts[caps.Hostname] = true
+				}
 				if b.Supported {
 					r.supported = 1
 				}
@@ -337,6 +346,11 @@ func (s *server) adminListBackends(w http.ResponseWriter, r *http.Request, p *Pr
 	out := make([]api.AdminBackend, 0, len(knownBackendList))
 	for _, name := range knownBackendList {
 		r := agg[name]
+		hosts := make([]string, 0, len(r.hosts))
+		for h := range r.hosts {
+			hosts = append(hosts, h)
+		}
+		sort.Strings(hosts)
 		out = append(out, api.AdminBackend{
 			Name:             name,
 			Enabled:          !disabled[name],
@@ -344,6 +358,7 @@ func (s *server) adminListBackends(w http.ResponseWriter, r *http.Request, p *Pr
 			ReportingBridges: r.reporting,
 			InstalledBridges: r.installed,
 			ReadyBridges:     r.ready,
+			Hosts:            hosts,
 		})
 	}
 	resp := map[string]any{"backends": out}

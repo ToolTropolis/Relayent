@@ -249,6 +249,15 @@ const adminHTML = `<!doctype html>
   code { font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--fg-dim);
     background:var(--bg); border:1px solid var(--line); border-radius:5px; padding:.08rem .35rem;
     word-break:break-all; }
+  /* Click-to-copy command chip. */
+  .cmd { display:flex; align-items:stretch; gap:0; margin:.35rem 0; max-width:100%; }
+  .cmd code { flex:1; min-width:0; border-radius:6px 0 0 6px; border-right:0; padding:.3rem .5rem;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cmd .copybtn { flex:none; font:600 .72rem/1 -apple-system,sans-serif; color:var(--muted);
+    background:var(--card-2); border:1px solid var(--line); border-radius:0 6px 6px 0; cursor:pointer;
+    padding:0 .55rem; }
+  .cmd .copybtn:hover { color:var(--fg); border-color:var(--accent); }
+  .cmd .copybtn.ok { color:var(--ok); border-color:color-mix(in srgb,var(--ok) 40%,transparent); }
 
   .kv { display:grid; grid-template-columns:180px 1fr; gap:0 .5rem; }
   .kv .k { color:var(--muted); padding:.5rem 0; border-bottom:1px solid var(--line-soft); font-size:.9rem; }
@@ -865,34 +874,51 @@ const CLI_INFO = {
 // render). Policy (allowed) and readiness are separate: a backend serves jobs
 // only when BOTH hold.
 function backendReadiness(b) {
+  // Name the actual machine when a bridge has reported; otherwise say where to look.
+  const hosts = b.hosts || [];
+  const where = hosts.length === 1 ? "on " + hosts[0]
+              : hosts.length > 1  ? "on the bridge (" + hosts.join(", ") + ")"
+              : "on the bridge machine";
   if (!b.supported)
     return { ok:false, label:"Not supported", kind:"text", hint:"This backend is a stub — no working adapter yet. It can't run jobs." };
   if (b.ready_bridges > 0)
-    return { ok:true, label:"Ready", kind:"text", hint:"Installed on "+b.ready_bridges+" bridge(s). If jobs fail, the CLI is likely logged out — run it on the bridge and sign in." };
+    return { ok:true, label:"Ready", kind:"text", hint:"Installed " + where + " on "+b.ready_bridges+" bridge(s). If jobs fail, the CLI is likely logged out — run it there and sign in." };
   if (b.installed_bridges > 0)
-    return { ok:false, label:"Installed, not ready", kind:"login", hint:"The CLI is present but not signed in. On the bridge run:" };
+    return { ok:false, label:"Installed, not ready", kind:"login", hint:"The CLI is present but not signed in. " + cap1(where) + ", run:" };
   if (!b.reporting_bridges)
-    return { ok:false, label:"No bridge reporting", kind:"install", hint:"No bridge has reported. On the bridge machine, install and sign in:" };
-  return { ok:false, label:"Not installed", kind:"install", hint:"Install this CLI on the bridge, then sign in — it appears on the next poll:" };
+    return { ok:false, label:"No bridge reporting", kind:"install", hint:"No bridge has reported yet — see Relay & bridges. On the bridge machine, install and sign in:" };
+  return { ok:false, label:"Not installed", kind:"install", hint:"Not installed " + where + ". Install and sign in — it appears on the next poll:" };
+}
+function cap1(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+// copyCmd renders a command as a click-to-copy chip: the <code> plus a copy
+// button. Clicking either copies the exact command to the clipboard.
+function copyCmd(command) {
+  const wrap = document.createElement("div"); wrap.className = "cmd";
+  const code = document.createElement("code"); code.textContent = command;
+  const btn = document.createElement("button"); btn.className = "copybtn"; btn.type = "button";
+  btn.title = "Copy"; btn.textContent = "Copy";
+  const doCopy = () => {
+    navigator.clipboard.writeText(command).then(() => {
+      const was = btn.textContent; btn.textContent = "Copied"; btn.classList.add("ok");
+      setTimeout(() => { btn.textContent = was; btn.classList.remove("ok"); }, 1200);
+    }).catch(() => {});
+  };
+  code.style.cursor = "pointer"; code.onclick = doCopy; btn.onclick = doCopy;
+  wrap.appendChild(code); wrap.appendChild(btn);
+  return wrap;
 }
 // buildGuidance renders the What-to-do cell: text + (for install/login) the exact
-// commands as <code> and a link to the official page.
+// commands as copyable chips + a link to the official page.
 function buildGuidance(name, r) {
   const td = document.createElement("td");
-  td.className = "muted"; td.style.maxWidth = "40ch"; td.style.whiteSpace = "normal";
-  td.appendChild(document.createTextNode(r.hint + " "));
+  td.className = "muted"; td.style.maxWidth = "44ch"; td.style.whiteSpace = "normal";
+  td.appendChild(document.createTextNode(r.hint));
   const info = CLI_INFO[name];
   if (info && (r.kind === "install" || r.kind === "login")) {
-    if (r.kind === "install" && info.install) {
-      const c1 = document.createElement("code"); c1.textContent = info.install; c1.style.display = "inline-block"; c1.style.margin = ".2rem 0";
-      td.appendChild(document.createElement("br")); td.appendChild(c1);
-    }
-    if (info.login) {
-      const c2 = document.createElement("code"); c2.textContent = info.login; c2.style.display = "inline-block"; c2.style.margin = ".2rem 0";
-      td.appendChild(document.createElement("br")); td.appendChild(c2);
-    }
-    td.appendChild(document.createElement("br"));
-    const a = document.createElement("a"); a.href = info.url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = "Official " + info.cli + " docs ↗";
+    if (r.kind === "install" && info.install) td.appendChild(copyCmd(info.install));
+    if (info.login) td.appendChild(copyCmd(info.login));
+    const a = document.createElement("a"); a.href = info.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+    a.textContent = "Official " + info.cli + " docs ↗"; a.style.display = "inline-block"; a.style.marginTop = ".3rem";
     td.appendChild(a);
   }
   return td;
