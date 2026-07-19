@@ -1,0 +1,54 @@
+# Relayent Demo — a public chat page backed by the relay.
+#
+# Primary author: Navjyot Nishant
+# Created on: 2026-07-19
+# Description: Runs the demo as its own compose stack. It reaches the relay by
+#   container name over the shared `relayent-network`, so it needs no relay URL on
+#   the public internet. Put it behind the same reverse proxy that fronts the relay
+#   (the proxy's service must also join relayent-network); point a vhost at
+#   http://relayent-demo:8080.
+#
+#   Safety: the demo only exposes the backends the RELAY is configured to allow
+#   (admin console -> Backends). Keep paid backends (claude, codex) DISABLED there
+#   so a public visitor can only use what you're happy to spend (e.g. cursor).
+#
+# QUICK START
+#   1. Issue an app credential in the relay admin console (or API) and note it.
+#   2. cp .env.example .env   # set the credential + target user
+#   3. docker compose up -d
+
+services:
+  relayent-demo:
+    # Build from the repo root so the shared go.mod is in context:
+    #   docker build -f demo/Dockerfile -t relayent-demo:latest .
+    image: relayent-demo:latest
+    pull_policy: never
+    container_name: relayent-demo
+    environment:
+      DEMO_LISTEN: ':8080'
+      # The relay, reachable by container name on relayent-network.
+      DEMO_RELAY_URL: ${DEMO_RELAY_URL:-http://relayent-relay:8787}
+      # App credential "<id>.<secret>" issued by an admin. Server-side only — the
+      # browser never sees it. In .env, never inline.
+      DEMO_APP_CREDENTIAL: ${DEMO_APP_CREDENTIAL:-}
+      # Whose bridge/subscription runs the jobs (an OIDC sub or user id).
+      DEMO_TARGET_USER: ${DEMO_TARGET_USER:-}
+      # Pre-selected backend in the dropdown.
+      DEMO_DEFAULT_BACKEND: ${DEMO_DEFAULT_BACKEND:-cursor}
+      DEMO_TITLE: ${DEMO_TITLE:-Relayent Playground}
+    networks: [relayent-network]
+    # No `ports:` — reached only via the proxy on relayent-network.
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    cap_drop:
+      - ALL
+    restart: always
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+networks:
+  relayent-network:
+    external: true
+    name: relayent-network
