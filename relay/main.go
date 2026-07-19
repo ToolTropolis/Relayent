@@ -193,16 +193,28 @@ func main() {
 	mux.HandleFunc("GET /v1/admin/users", srv.authorize(ScopeAdmin, srv.adminListUsers))
 	mux.HandleFunc("POST /v1/admin/users", srv.authorize(ScopeAdmin, srv.adminCreateUser))
 	mux.HandleFunc("POST /v1/admin/users/{sub}/disabled", srv.authorize(ScopeAdmin, srv.adminSetUserDisabled))
+	mux.HandleFunc("POST /v1/admin/users/{sub}/role", srv.authorize(ScopeAdmin, srv.adminSetUserRole))
+	mux.HandleFunc("DELETE /v1/admin/users/{sub}", srv.authorize(ScopeAdmin, srv.adminDeleteUser))
 	mux.HandleFunc("POST /v1/admin/enroll-tokens", srv.authorize(ScopeAdmin, srv.adminIssueEnrollToken))
 	mux.HandleFunc("GET /v1/admin/app-creds", srv.authorize(ScopeAdmin, srv.adminListAppCreds))
 	mux.HandleFunc("POST /v1/admin/app-creds", srv.authorize(ScopeAdmin, srv.adminCreateAppCred))
 	mux.HandleFunc("POST /v1/admin/app-creds/{id}/revoke", srv.authorize(ScopeAdmin, srv.adminRevokeAppCred))
+	mux.HandleFunc("DELETE /v1/admin/app-creds/{id}", srv.authorize(ScopeAdmin, srv.adminDeleteAppCred))
 	mux.HandleFunc("GET /v1/admin/audit", srv.authorize(ScopeAdmin, srv.adminAudit))
+	mux.HandleFunc("GET /v1/admin/config", srv.authorize(ScopeAdmin, srv.adminConfig))
+	mux.HandleFunc("GET /v1/admin/users/{sub}/bridges", srv.authorize(ScopeAdmin, srv.adminListUserBridges))
+	mux.HandleFunc("DELETE /v1/admin/bridges/{id}", srv.authorize(ScopeAdmin, srv.adminRevokeBridge))
+	mux.HandleFunc("GET /v1/admin/backends", srv.authorize(ScopeAdmin, srv.adminListBackends))
+	mux.HandleFunc("POST /v1/admin/backends/{name}", srv.authorize(ScopeAdmin, srv.adminSetBackend))
 
 	// The admin dashboard (multi-tenant only). The page itself is public HTML —
 	// it authenticates its /v1/admin/* XHRs via the OIDC session cookie or a
 	// pasted admin token, exactly as the status page does with the pairing key.
 	mux.HandleFunc("GET /admin", srv.adminPage)
+
+	// /login is the single human sign-in surface: OIDC button + bootstrap-token
+	// entry, redirecting by role on success. Multi-tenant only (guarded in-handler).
+	mux.HandleFunc("GET /login", srv.loginPage)
 
 	mux.HandleFunc("GET /", srv.statusPage)
 
@@ -469,6 +481,13 @@ func (s *server) enqueue(w http.ResponseWriter, r *http.Request, p *Principal) {
 		return
 	}
 
+	// Enforce the global backend policy at enqueue, not just in the UI: a disabled
+	// backend is refused for everyone, so a direct API caller can't bypass it.
+	if disabled, _ := s.store.DisabledBackends(); disabled[strings.ToLower(strings.TrimSpace(req.Backend))] {
+		writeErr(w, http.StatusForbidden, "backend is disabled on this relay")
+		return
+	}
+
 	// Resolve which user's bridge this job routes to.
 	target, err := s.routeTarget(p, req.TargetUser)
 	if err != nil {
@@ -529,6 +548,33 @@ func (s *server) routeTarget(p *Principal, targetUser string) (string, error) {
 	return p.UserID, nil
 }
 
+// resolveReadTarget decides whose namespace a READ/cancel/presence call operates
+// on, mirroring routeTarget's authorization for the read side. An app enqueues
+// into target_user's namespace, so it must name the SAME target_user (via the
+// ?target_user= query) to fetch a result, cancel, or check presence — otherwise
+// the lookup runs under the app's own id and every read 404s. Self-routing
+// principals (bridge/legacy/OIDC) ignore the query and use their own id; naming a
+// different user is rejected, so the anti-spoof guard is unchanged.
+func (s *server) resolveReadTarget(p *Principal, r *http.Request) (string, error) {
+	targetUser := strings.TrimSpace(r.URL.Query().Get("target_user"))
+
+	if p.Kind == KindApp {
+		if targetUser == "" {
+			return "", fmt.Errorf("target_user query parameter is required for an app credential")
+		}
+		u, err := s.store.GetUser(targetUser)
+		if err != nil || u.Disabled {
+			return "", fmt.Errorf("target_user is not a known active user")
+		}
+		return targetUser, nil
+	}
+
+	if targetUser != "" && targetUser != p.UserID {
+		return "", fmt.Errorf("this credential may only access its own jobs")
+	}
+	return p.UserID, nil
+}
+
 func (s *server) claimNext(w http.ResponseWriter, r *http.Request, p *Principal) {
 	wait := defaultNextWait
 	if v := r.URL.Query().Get("wait"); v != "" {
@@ -584,11 +630,16 @@ func jsonLen(v any) int {
 
 func (s *server) fetch(w http.ResponseWriter, r *http.Request, p *Principal) {
 	id := r.PathValue("id")
+	target, err := s.resolveReadTarget(p, r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	wait := time.Duration(0)
 	if r.URL.Query().Get("wait") == "1" || strings.EqualFold(r.URL.Query().Get("wait"), "true") {
 		wait = fetchWait
 	}
-	res, ok := s.q.Fetch(p.UserID, id, wait)
+	res, ok := s.q.Fetch(target, id, wait)
 	if !ok {
 		writeErr(w, http.StatusNotFound, "unknown job for this identity")
 		return
@@ -602,7 +653,12 @@ func (s *server) fetch(w http.ResponseWriter, r *http.Request, p *Principal) {
 // caller is not misled about whether work (and quota) was actually saved.
 func (s *server) cancel(w http.ResponseWriter, r *http.Request, p *Principal) {
 	id := r.PathValue("id")
-	prev, ok := s.q.Cancel(p.UserID, id)
+	target, err := s.resolveReadTarget(p, r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	prev, ok := s.q.Cancel(target, id)
 	if !ok {
 		writeErr(w, http.StatusNotFound, "unknown job for this identity")
 		return
@@ -629,7 +685,12 @@ func (s *server) cancel(w http.ResponseWriter, r *http.Request, p *Principal) {
 }
 
 func (s *server) bridgeOnline(w http.ResponseWriter, r *http.Request, p *Principal) {
-	writeJSON(w, http.StatusOK, api.BridgeOnlineResponse{Online: s.q.BridgeOnline(p.UserID)})
+	target, err := s.resolveReadTarget(p, r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, api.BridgeOnlineResponse{Online: s.q.BridgeOnline(target)})
 }
 
 // status reports relay-level health and this principal's view of the system,
@@ -660,14 +721,45 @@ func (s *server) status(w http.ResponseWriter, r *http.Request, p *Principal) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// getCapabilities returns what the bridge last reported it supports.
+// getCapabilities returns what the bridge last reported it supports, minus any
+// backend an admin has disabled globally. An app credential names the target user
+// (?target_user=) as with the other read endpoints; a self-routing principal sees
+// its own. Disabled backends are omitted entirely so a consumer (e.g. the demo's
+// model dropdown) only ever sees what it is allowed to use.
 func (s *server) getCapabilities(w http.ResponseWriter, r *http.Request, p *Principal) {
-	caps, reportedAt, online := s.q.Capabilities(p.UserID)
+	target, err := s.resolveReadTarget(p, r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	caps, reportedAt, online := s.q.Capabilities(target)
+	caps.Backends = s.filterDisabledBackends(caps.Backends)
 	resp := api.CapabilitiesResponse{Online: online, Capabilities: caps}
 	if !reportedAt.IsZero() {
 		resp.ReportedAt = reportedAt.UTC().Format(time.RFC3339)
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// filterDisabledBackends drops backends an admin has switched off. In legacy mode
+// (no store) there is no policy, so the list passes through. A store read error
+// returns the list unchanged rather than hiding everything — enqueue independently
+// enforces the policy, so a stale read here cannot let a disabled backend run.
+func (s *server) filterDisabledBackends(in []api.BackendInfo) []api.BackendInfo {
+	if !s.store.Enabled() {
+		return in
+	}
+	disabled, err := s.store.DisabledBackends()
+	if err != nil || len(disabled) == 0 {
+		return in
+	}
+	out := in[:0:0]
+	for _, b := range in {
+		if !disabled[b.Name] {
+			out = append(out, b)
+		}
+	}
+	return out
 }
 
 // postCapabilities lets a bridge register what backends it has available. The relay

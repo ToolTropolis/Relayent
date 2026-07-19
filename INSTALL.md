@@ -138,17 +138,26 @@ your machine and spend your subscription. Treat it like a password throughout.
 
 ## Prerequisites
 
-**On the bridge machine**, at least one AI CLI installed **and signed in**:
+**On the bridge machine**, at least one AI CLI installed **and signed in**. Each backend maps
+to one CLI — install the ones whose subscription you want to use, then sign in. Always follow
+the official page for the current install command and login flow; the commands below are a
+starting point.
 
-```bash
-claude --version          # Claude Code   — https://claude.com/claude-code
-codex --version           # Codex         — https://developers.openai.com/codex
-cursor-agent status       # Cursor        — https://cursor.com/cli
-```
+| Backend | CLI | Install (see official page for the current method) | Official page | Sign in | Verify |
+|---|---|---|---|---|---|
+| `claude` | Claude Code | `npm i -g @anthropic-ai/claude-code` | https://claude.com/claude-code | `claude` (prompts to log in) | `claude --version` |
+| `codex` | Codex CLI | `npm i -g @openai/codex` | https://developers.openai.com/codex | `codex login` | `codex --version` |
+| `cursor` | Cursor CLI | `curl https://cursor.com/install -fsS \| bash` | https://cursor.com/cli | `cursor-agent login` | `cursor-agent status` → `✓ Logged in as <you>` |
+| `gemini` | Gemini CLI | `npm i -g @google/gemini-cli` | https://github.com/google-gemini/gemini-cli | `gemini` (prompts to log in) | `gemini --version` |
 
-At least one must succeed. For Cursor you should see `✓ Logged in as <you>`. **Signed in
-matters more than installed**: Relayent reuses the CLI's own session and never handles
-credentials, so an installed-but-logged-out CLI cannot run jobs.
+At least one must succeed. **Signed in matters more than installed**: Relayent reuses the CLI's
+own session and never handles credentials, so an installed-but-logged-out CLI cannot run jobs.
+For anything install- or login-related, the **official page is the source of truth** — versions,
+package names, and login flows change.
+
+Install a CLI (or sign in) **after** the bridge is already running and it just works — the bridge
+re-reports its backends on the next poll, and any consumer (the API, the demo dropdown) picks up
+the newly-ready backend on refresh. No bridge restart or redeploy needed.
 
 **To build from source** (recommended): Go 1.22+ (`go version`). On macOS: `brew install go`.
 
@@ -667,7 +676,7 @@ your CLI subscription → back.
 | Result | Meaning | Fix |
 |---|---|---|
 | `{"online":false}` | No bridge polling with this key | `relayent-bridge status`; check both sides use the same key |
-| `not supported yet by this bridge` | Backend is a stub (`gemini`) | Use one showing `ready:true` |
+| `not supported yet by this bridge` | The bridge has no adapter for that backend | Pick a backend showing `ready:true` in `/v1/bridge/capabilities` |
 | `status:"error"` naming a CLI | The CLI failed — usually logged out | Run it manually, e.g. `cursor-agent status` |
 | Nothing after ~90s | Bridge claimed it but the CLI hung | `relayent-bridge monitor` and watch the log panel |
 
@@ -775,7 +784,7 @@ rest are environment-only.
 | `RELAYENT_CLAUDE_BIN` | `claude` | Override the Claude CLI path. |
 | `RELAYENT_CODEX_BIN` | `codex` | Override the Codex CLI path. |
 | `RELAYENT_CURSOR_BIN` | `cursor-agent` | Override the Cursor CLI path. |
-| `RELAYENT_GEMINI_BIN` | `gemini` | Override the Gemini CLI path (adapter is a stub). |
+| `RELAYENT_GEMINI_BIN` | `gemini` | Override the Gemini CLI path. |
 
 ### The workspace
 
@@ -941,9 +950,15 @@ first; the threat model changes.
 ```bash
 RELAYENT_DATA_DIR=/var/lib/relayent \           # persistence (users, bindings, audit)
 RELAYENT_ADMIN_TOKEN=<strong-token> \           # bootstrap admin (>=24 chars; keygen)
+RELAYENT_SESSION_KEY=<stable-secret> \          # signs admin sessions — SET THIS (see below)
 RELAYENT_PAIRING_KEY=<existing-key> \           # keep for a no-downtime migration (below)
   relayent-relay
 ```
+
+> **Set `RELAYENT_SESSION_KEY` to a stable value.** It's the HMAC key for admin session
+> cookies. If you leave it unset, the relay generates a fresh random key every time the process
+> starts — so **every restart or redeploy logs everyone out**. Any stable secret ≥16 chars works
+> (32+ recommended); generate one with `head -c 36 /dev/urandom | base64` and keep it in `.env`.
 
 For real human admins (recommended), also configure OIDC — the first person to log in becomes
 admin:
@@ -954,6 +969,34 @@ RELAYENT_OIDC_CLIENT_ID=... RELAYENT_OIDC_CLIENT_SECRET=... \
 RELAYENT_OIDC_REDIRECT_URL=https://relay.example.com/v1/auth/callback \
 RELAYENT_OIDC_HOSTED_DOMAIN=yourcompany.com      # lock to your Workspace domain
 ```
+
+All OIDC vars are all-or-nothing; the redirect URL must exactly match one registered on the
+OAuth client. (Changing `.env` needs `docker compose up -d`, not `restart` — `restart` reuses
+the old environment.)
+
+### Sign in and the admin console
+
+Humans sign in at the **`/login`** page — open `https://relay.example.com/login` in a browser.
+It offers "Sign in with Google" (or your configured provider) and a field for the bootstrap
+admin token. On success you're routed **by role**: an admin lands on the **`/admin`** console, a
+regular user on **`/`** (their own status page).
+
+The **first person to sign in becomes the admin.** Everyone after is a regular user until an
+admin promotes them.
+
+> **Caveat — who becomes admin.** "First user" means the first record in the store. If you
+> pre-provision anyone with `POST /v1/admin/users` (or leave a test user) *before* you sign in,
+> your sign-in is no longer the first user and you'll land on `/` as a regular user, not `/admin`.
+> If that happens, promote yourself with the bootstrap token:
+> ```bash
+> curl -sXPOST $RELAY/v1/admin/users/<your-sub>/role -H "$ADMIN" -d '{"role":"admin"}'
+> ```
+> Find `<your-sub>` in `GET /v1/admin/users`. Then reload `/admin`.
+
+The `/admin` console is a full dashboard — a grouped sidebar for **Users** (create, promote/demote,
+disable, delete, enroll a bridge), **Audit**, **Relay & bridges** status, **Enrol a bridge**, a
+read-only **Settings** view of the effective config, and **App credentials**. Every action goes
+through the `/v1/admin/*` API below; the console never shows prompt or result content.
 
 ### Onboard a user
 
@@ -1001,12 +1044,26 @@ The legacy pairing key keeps working the whole time, so migrate gradually:
 
 This mirrors the key-rotation overlap: old and new auth coexist until you drop the old.
 
-### Admin visibility
+### Manage users and visibility
+
+Everything here is also in the `/admin` console; the curl forms are for scripting.
 
 ```bash
-curl -s $RELAY/v1/admin/users -H "$ADMIN"    # per-user job counts, bridge presence
-curl -s $RELAY/v1/admin/audit -H "$ADMIN"    # history: who/when/backend/status — NO content
+# Visibility (activity only — never prompt/result content)
+curl -s $RELAY/v1/admin/users  -H "$ADMIN"    # per-user job counts, bridge presence, role
+curl -s $RELAY/v1/admin/audit  -H "$ADMIN"    # history: who/when/backend/status — NO content
+curl -s $RELAY/v1/admin/config -H "$ADMIN"    # effective relay config — NO secret values
+
+# Lifecycle
+curl -sXPOST   "$RELAY/v1/admin/users/alice/role"          -H "$ADMIN" -d '{"role":"admin"}'  # promote
+curl -sXPOST   "$RELAY/v1/admin/users/alice/role"          -H "$ADMIN" -d '{"role":"user"}'   # demote
+curl -sXPOST   "$RELAY/v1/admin/users/alice/disabled"      -H "$ADMIN"                         # disable
+curl -sXPOST   "$RELAY/v1/admin/users/alice/disabled?disabled=false" -H "$ADMIN"               # re-enable
+curl -sXDELETE "$RELAY/v1/admin/users/alice"               -H "$ADMIN"                         # delete
+curl -sXPOST   "$RELAY/v1/admin/app-creds/<id>/revoke"     -H "$ADMIN"                         # revoke a cred
 ```
 
-The admin sees *activity*, never prompt or result content — that boundary is structural.
+The admin sees *activity*, never prompt or result content — that boundary is structural. Role
+changes go only through the `/role` endpoint (a login can't self-promote), and an admin cannot
+demote or delete themselves.
 

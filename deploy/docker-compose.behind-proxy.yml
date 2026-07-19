@@ -52,6 +52,11 @@ services:
       # relay refuses to start when network-reachable. Remove once a real OIDC
       # admin exists. In .env, never inline.
       RELAYENT_ADMIN_TOKEN: ${RELAYENT_ADMIN_TOKEN:-}
+      # Stable HMAC key for admin session cookies. If unset the relay picks a
+      # random key per process, so every restart/redeploy invalidates all
+      # sessions (everyone gets logged out). Set it to keep sessions valid across
+      # deploys. In .env, never inline.
+      RELAYENT_SESSION_KEY: ${RELAYENT_SESSION_KEY:-}
       # The proxy terminates TLS and is trusted, so honour its X-Forwarded-*.
       RELAYENT_TRUST_PROXY: '1'
       # OIDC (optional, added after its live flow is verified against a real
@@ -61,6 +66,14 @@ services:
       RELAYENT_OIDC_CLIENT_SECRET: ${RELAYENT_OIDC_CLIENT_SECRET:-}
       RELAYENT_OIDC_REDIRECT_URL: ${RELAYENT_OIDC_REDIRECT_URL:-}
       RELAYENT_OIDC_HOSTED_DOMAIN: ${RELAYENT_OIDC_HOSTED_DOMAIN:-}
+      # Optional: the public demo/playground this relay backs. When set, the admin
+      # console shows a "View demo" link. Non-secret. The demo never links back to
+      # /admin — it is a public surface.
+      RELAYENT_DEMO_URL: ${RELAYENT_DEMO_URL:-}
+      # Optional: a human label for the host this relay runs on, shown in the admin
+      # console's Settings. Inside a container os.Hostname() is only the container
+      # ID, so set this to the real host/VPS name (e.g. "prod-1" or a domain).
+      RELAYENT_HOST_LABEL: ${RELAYENT_HOST_LABEL:-}
     volumes:
       - relayent-data:/data       # control-plane store (users, hashed creds, audit)
     depends_on:

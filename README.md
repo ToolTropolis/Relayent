@@ -22,9 +22,27 @@ approvals it needs.
 
 ## Why
 
-If you (or your users) already pay for Claude Code / Codex / Gemini / Cursor, you shouldn't
-have to buy API tokens to use those same models inside another app. Relayent reuses the CLI's
-own authenticated session — it never stores or handles credentials.
+Your Claude / Codex / Gemini / Cursor subscription is built for one thing: **you, coding, in
+your editor or terminal.** It's a flat monthly price and it's generous — you can lean on the
+model all day inside your IDE or CLI.
+
+But the moment you want to put a model **inside the product you're building** — a chat feature,
+an in-app assistant, a summarizer — that subscription is off the table. Application features
+have to talk to the metered **API**, billed per token. And for sustained, real-world use the API
+runs materially more expensive than the flat subscription you're already paying for. So you end
+up paying twice for the same models: once for the subscription you can only use yourself, and
+again — at API rates — for the feature you ship to users.
+
+**Relayent closes that gap.** It routes your app's AI calls to the CLI subscription already
+running and signed in on a machine you (or your user) control, so the feature you ship runs on
+the plan you already pay for instead of a second, metered bill. It reuses the CLI's own
+authenticated session and never stores or handles credentials.
+
+That reframes the unit of scale, too: instead of one central API bill that grows with every
+user, **each user brings their own subscription.** Your product's chat feature runs on *their*
+plan, on *their* machine — which is exactly why isolating one user's jobs from another's (so
+nobody's prompt ever spends someone else's quota) is the core problem Relayent's multi-tenant
+mode solves.
 
 ## Components
 
@@ -91,12 +109,16 @@ this key is accepted; otherwise any non-empty key gets its own isolated namespac
 
 ## Backends
 
-| Backend | Status | How it runs |
-|---|---|---|
-| `claude` | ✅ | `claude -p --output-format json [--json-schema] [--model]`, prompt on stdin |
-| `codex` | ✅ | `codex exec -`, prompt on stdin |
-| `cursor` | ✅ | `cursor-agent -p --output-format json --mode ask --trust`, prompt as an argument |
-| `gemini` | 🔜 stub | wire the Gemini CLI headless mode |
+| Backend | Status | CLI (official page) | How it runs |
+|---|---|---|---|
+| `claude` | ✅ | [Claude Code](https://claude.com/claude-code) | `claude -p --output-format json [--json-schema] [--model]`, prompt on stdin |
+| `codex` | ✅ | [Codex](https://developers.openai.com/codex) | `codex exec -`, prompt on stdin |
+| `cursor` | ✅ | [Cursor CLI](https://cursor.com/cli) | `cursor-agent -p --output-format json --mode ask --trust`, prompt as an argument |
+| `gemini` | ✅ | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `gemini -p <prompt> --output-format json [-m <model>]`, unwraps the `response` field |
+
+Install and sign in to a backend's CLI on the **bridge** machine — see
+[INSTALL.md → Prerequisites](INSTALL.md#prerequisites) for per-CLI commands. A backend appears
+the moment its CLI is installed and logged in; no bridge restart needed.
 
 `cursor` runs in `--mode ask` (read-only Q&A) so a generation job can never edit files or run
 shell commands. `--trust` is required for headless runs. The CLI has no schema flag, so the
@@ -242,6 +264,35 @@ docker compose up -d
 The relay container is never published to the host — only Caddy's `443` is exposed, so TLS
 cannot be bypassed.
 
+## Multi-user (multi-tenant)
+
+By default one shared pairing key means one shared subscription — whoever holds the key spends
+that one account's quota. For **many users, each on their own subscription, isolated from one
+another**, run the relay multi-tenant: set `RELAYENT_DATA_DIR` (a persistent volume) and,
+normally, OIDC. Then:
+
+- **Humans sign in at `/login`** — "Sign in with Google" (or your OIDC provider), or a bootstrap
+  admin token. The **first person to sign in becomes the admin**; the rest are regular users.
+  After login you're routed by role: admins to the **`/admin` console**, users to their own
+  status page.
+- **The `/admin` console** manages users (create, promote/demote, disable, delete), enrolls
+  bridges, issues and revokes app credentials, and shows per-user activity and an audit log —
+  **never any prompt or result content**.
+- **Each user runs their own bridge**, enrolled with a one-time token, bound to only their jobs.
+- **Apps** authenticate with an issued **app credential** and name `target_user` per job; a job
+  for `alice` runs only on alice's bridge/subscription.
+
+Enterprise SSO (Azure AD, Okta, any OIDC issuer) is a change of issuer URL — same protocol. The
+relay stores **no passwords** (OIDC) and only **hashed** machine credentials plus a non-secret
+user directory. Full setup is in [INSTALL.md](INSTALL.md#multi-user-multi-tenant-mode); the
+changed threat model is in [SECURITY.md](SECURITY.md#multi-tenant-model-the-changed-threat-model).
+
+**How isolation works, end to end:**
+
+![Relayent multi-tenant relay architecture](docs/architecture/system-arch.svg)
+
+*(Editable version: [`docs/architecture/system-arch.excalidraw`](docs/architecture/system-arch.excalidraw) — open at [excalidraw.com](https://excalidraw.com).)*
+
 ## Security
 
 **The pairing key is the only thing between the internet and your CLI subscription.** Anyone
@@ -267,10 +318,11 @@ protect against](SECURITY.md#what-relayent-does-not-protect-against).
 
 | Document | What it covers |
 |---|---|
-| **[API.md](API.md)** | Integrating an app: every call, what the numbers mean, the traps, a runnable client, and a verification checklist |
+| **[API.md](API.md)** | Integrating an app: every call, what the numbers mean, the traps, a runnable client, a verification checklist, and the admin / multi-tenant surface |
 | **[INSTALL.md](INSTALL.md)** | Setup, start to finish: bridge, relay (localhost / private / public+TLS), verification, configuration, rotation, troubleshooting |
 | **[SECURITY.md](SECURITY.md)** | Threat model, the deploy guide, and **what Relayent does not protect against** |
 | **[AGENTS.md](AGENTS.md)** | Conventions and security invariants for AI agents working on this codebase |
+| **[demo/](demo/)** | A public chat playground backed by the relay — model dropdown from the API, one message = one job |
 | **[openapi.yaml](openapi.yaml)** | The `/v1` contract — the only integration surface |
 
 ## License

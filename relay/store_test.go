@@ -30,6 +30,70 @@ func openTestStore(t *testing.T) *Store {
 	return s
 }
 
+// SetUserRole flips admin and back; UpsertUser must not clobber it afterwards.
+func TestSetUserRole(t *testing.T) {
+	s := openTestStore(t)
+	s.UpsertUser(User{Sub: "u1", Email: "u1@x.com"}) // defaults to RoleUser
+	if err := s.SetUserRole("u1", RoleAdmin); err != nil {
+		t.Fatalf("SetUserRole: %v", err)
+	}
+	if u, _ := s.GetUser("u1"); u.Role != RoleAdmin {
+		t.Fatalf("role = %q, want admin", u.Role)
+	}
+	// A later login (UpsertUser) must preserve the promoted role.
+	s.UpsertUser(User{Sub: "u1", Email: "u1@x.com"})
+	if u, _ := s.GetUser("u1"); u.Role != RoleAdmin {
+		t.Fatalf("UpsertUser clobbered role to %q", u.Role)
+	}
+	if err := s.SetUserRole("u1", "bogus"); err == nil {
+		t.Fatal("SetUserRole must reject an unknown role")
+	}
+	if err := s.SetUserRole("missing", RoleAdmin); err != ErrNotFound {
+		t.Fatalf("SetUserRole on missing user = %v, want ErrNotFound", err)
+	}
+}
+
+// DeleteUser removes the record; CountUsers reflects it.
+func TestDeleteUser(t *testing.T) {
+	s := openTestStore(t)
+	s.UpsertUser(User{Sub: "gone", Email: "g@x.com"})
+	if err := s.DeleteUser("gone"); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+	if _, err := s.GetUser("gone"); err != ErrNotFound {
+		t.Fatalf("deleted user still present: %v", err)
+	}
+	if err := s.DeleteUser("gone"); err != ErrNotFound {
+		t.Fatalf("second delete = %v, want ErrNotFound", err)
+	}
+}
+
+// Backend policy: empty = all enabled; disabling adds to the set; enabling removes.
+func TestBackendPolicy(t *testing.T) {
+	s := openTestStore(t)
+	if d, err := s.DisabledBackends(); err != nil || len(d) != 0 {
+		t.Fatalf("fresh store should disable nothing, got (%v,%v)", d, err)
+	}
+	if err := s.SetBackendEnabled("claude", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetBackendEnabled("codex", false); err != nil {
+		t.Fatal(err)
+	}
+	d, _ := s.DisabledBackends()
+	if !d["claude"] || !d["codex"] || d["cursor"] {
+		t.Fatalf("expected claude+codex disabled, cursor enabled; got %v", d)
+	}
+	// Re-enabling removes it; idempotent.
+	if err := s.SetBackendEnabled("claude", true); err != nil {
+		t.Fatal(err)
+	}
+	d, _ = s.DisabledBackends()
+	if d["claude"] || !d["codex"] {
+		t.Fatalf("claude should be back on, codex still off; got %v", d)
+	}
+}
+
 // A nil store must be a total no-op — this is legacy single-key mode, and every
 // call site relies on it so the pre-existing deployment needs no DB.
 func TestNilStoreIsSafeNoop(t *testing.T) {

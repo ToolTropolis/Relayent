@@ -13,6 +13,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 )
@@ -84,5 +86,54 @@ func TestRoute_LegacySelfOnly(t *testing.T) {
 	}
 	if _, err := s.routeTarget(leg, "alice"); err == nil {
 		t.Error("legacy principal must not enqueue for a named user")
+	}
+}
+
+// newReadReq builds a GET carrying ?target_user=<v> (omitted when empty), as the
+// read-side handlers see it.
+func newReadReq(target string) *http.Request {
+	url := "/v1/jobs/x"
+	if target != "" {
+		url += "?target_user=" + target
+	}
+	return httptest.NewRequest("GET", url, nil)
+}
+
+// REGRESSION: an app enqueues into target_user's namespace, so it must resolve
+// the SAME namespace to read/cancel/check presence — otherwise every read 404s.
+func TestReadTarget_AppResolvesNamedUser(t *testing.T) {
+	s := routeTestServer(t)
+	app := &Principal{Kind: KindApp, Scopes: []string{ScopeEnqueue}}
+
+	got, err := s.resolveReadTarget(app, newReadReq("alice"))
+	if err != nil || got != "alice" {
+		t.Fatalf("app read alice = (%q,%v), want alice", got, err)
+	}
+	if _, err := s.resolveReadTarget(app, newReadReq("")); err == nil {
+		t.Error("app read with no target_user must be rejected")
+	}
+	if _, err := s.resolveReadTarget(app, newReadReq("nobody")); err == nil {
+		t.Error("app read naming an unknown user must be rejected")
+	}
+	s.store.SetUserDisabled("bob", true)
+	if _, err := s.resolveReadTarget(app, newReadReq("bob")); err == nil {
+		t.Error("app must not read a disabled user's jobs")
+	}
+}
+
+// SECURITY-CRITICAL: a self-routing principal reads only its own namespace and
+// cannot name another user on the read side either.
+func TestReadTarget_SelfRoutingCannotSpoof(t *testing.T) {
+	s := routeTestServer(t)
+	bridge := &Principal{Kind: KindUserBridge, UserID: "alice", Scopes: []string{ScopeClaim}}
+
+	if got, err := s.resolveReadTarget(bridge, newReadReq("")); err != nil || got != "alice" {
+		t.Fatalf("bridge self read = (%q,%v), want alice", got, err)
+	}
+	if got, err := s.resolveReadTarget(bridge, newReadReq("alice")); err != nil || got != "alice" {
+		t.Fatalf("bridge read target=self = (%q,%v), want alice", got, err)
+	}
+	if _, err := s.resolveReadTarget(bridge, newReadReq("bob")); err == nil {
+		t.Fatal("a bridge credential must NOT read a different user's jobs")
 	}
 }

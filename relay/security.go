@@ -334,6 +334,18 @@ var knownBackends = map[string]bool{
 	"claude": true, "codex": true, "gemini": true, "cursor": true,
 }
 
+// knownBackendList is the same set in a stable display order, for the admin
+// backend-policy UI/API (a map has no order).
+var knownBackendList = []string{"claude", "codex", "gemini", "cursor"}
+
+// supportedBackends are those with a real (non-stub) adapter. All four now have
+// working adapters, so all are supported. Kept as an explicit set so the admin UI
+// can report "supported" even when no bridge is online to confirm it, and so a
+// future stub would be marked unsupported by omission.
+var supportedBackends = map[string]bool{
+	"claude": true, "codex": true, "cursor": true, "gemini": true,
+}
+
 // sanitizeCapabilities filters a bridge's self-report down to values the relay is
 // willing to serve back. Capabilities are attacker-controllable — anyone with a
 // valid pairing key can POST them — and they are later rendered on the status

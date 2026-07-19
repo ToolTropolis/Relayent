@@ -44,6 +44,7 @@ type oidcAuth struct {
 	verifier     *oidc.IDTokenVerifier
 	oauth        *oauth2.Config
 	hostedDomain string // if set, only accounts in this Workspace domain (hd claim) are accepted
+	issuer       string // OIDC issuer URL (shown read-only in the Configure view)
 	providerName string // friendly issuer name for the UI, e.g. "Google"
 	sessionKey   []byte // HMAC key for signing session cookies
 	store        *Store
@@ -116,6 +117,7 @@ func setupOIDC(ctx context.Context, store *Store) (*oidcAuth, error) {
 		provider:     provider,
 		verifier:     provider.Verifier(&oidc.Config{ClientID: clientID}),
 		hostedDomain: os.Getenv("RELAYENT_OIDC_HOSTED_DOMAIN"),
+		issuer:       issuer,
 		providerName: providerName(issuer),
 		sessionKey:   sessionKey,
 		store:        store,
@@ -217,7 +219,15 @@ func (a *oidcAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.setSession(w, idToken.Subject)
-	http.Redirect(w, r, "/admin", http.StatusFound)
+
+	// Redirect by effective role. UpsertUser preserves an existing user's role, so
+	// re-read it rather than trusting the bootstrap `role` computed above: an admin
+	// lands on the console, a regular user on their own status page.
+	dest := "/"
+	if u, err := a.store.GetUser(idToken.Subject); err == nil && u.Role == RoleAdmin {
+		dest = "/admin"
+	}
+	http.Redirect(w, r, dest, http.StatusFound)
 }
 
 // handleLogout clears the session cookie.

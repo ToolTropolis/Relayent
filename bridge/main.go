@@ -147,6 +147,9 @@ type bridge struct {
 // run is the poll loop: claim a job, process it, repeat, until ctx is cancelled.
 func (b *bridge) run(ctx context.Context) {
 	backoff := time.Second
+	pollFailed := false                // true after a poll error, so recovery can re-report caps
+	var lastCaps time.Time             // when caps were last reported from this loop
+	const capsEvery = 15 * time.Second // keep the relay's readiness fresh to ~this
 	for {
 		if ctx.Err() != nil {
 			return
@@ -154,6 +157,7 @@ func (b *bridge) run(ctx context.Context) {
 		job, ok, err := b.claimNext(ctx)
 		if err != nil {
 			log.Printf("[relayent-bridge] poll error: %v (retrying in %s)", err, backoff)
+			pollFailed = true
 			if !sleepCtx(ctx, backoff) {
 				return
 			}
@@ -163,6 +167,16 @@ func (b *bridge) run(ctx context.Context) {
 			continue
 		}
 		backoff = time.Second
+		// Keep readiness current: re-scan and report on recovery from a poll failure
+		// (a relay restart loses in-memory caps), and otherwise at most every
+		// capsEvery so a newly installed/removed CLI surfaces within a poll cycle
+		// rather than waiting on the slow fallback ticker. Describe() re-detects the
+		// CLIs each call, so this is always a fresh scan, not a cached one.
+		if pollFailed || time.Since(lastCaps) >= capsEvery {
+			pollFailed = false
+			b.reportCapabilities(ctx)
+			lastCaps = time.Now()
+		}
 		if !ok {
 			continue // 204: no job within the wait window; poll again
 		}
@@ -263,15 +277,9 @@ func (b *bridge) postResult(ctx context.Context, id string, res api.ResultReques
 	return nil
 }
 
-// unavailableReason explains why a backend can't run, distinguishing "the adapter
-// isn't implemented yet" from "the CLI isn't installed here".
+// unavailableReason explains why a backend can't run. Every adapter is now
+// implemented, so the only reason is the CLI not being installed on this machine.
 func (b *bridge) unavailableReason(name string, a adapters.Adapter) string {
-	if bp, ok := a.(interface{ BinPresent() bool }); ok {
-		if bp.BinPresent() {
-			return fmt.Sprintf("backend %q is not supported yet by this bridge (adapter is a stub)", name)
-		}
-		return fmt.Sprintf("backend %q is not supported yet and its CLI is not installed on this machine", name)
-	}
 	return fmt.Sprintf("backend %q CLI not installed on this machine", name)
 }
 

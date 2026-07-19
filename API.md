@@ -161,7 +161,7 @@ Content-Type: application/json
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `backend` | string | yes | `claude` \| `codex` \| `cursor`. Use one reporting `ready: true`. |
+| `backend` | string | yes | `claude` \| `codex` \| `cursor` \| `gemini`. Use one reporting `ready: true`. |
 | `prompt` | string | yes | The content prompt. |
 | `model` | string | no | A value from `models[]`. Omit for the backend's default. |
 | `system` | string | no | System instruction. |
@@ -245,6 +245,86 @@ Authorization: Bearer <key>
 
 ---
 
+## Admin & multi-tenant
+
+Everything above is the single integration surface and works in **both** deployment models.
+When the relay runs **multi-tenant** (`RELAYENT_DATA_DIR` + usually OIDC), it adds per-user
+identity, isolation, and an operator surface. As an app integrator you need only one extra
+thing: authenticate with an **app credential** and name the **`target_user`** on each
+`POST /v1/jobs` (see below). The rest of this section is for the **operator** running the relay.
+
+### For apps: routing to a specific user
+
+An app credential is issued by an admin and looks like `"<id>.<secret>"`. Use it exactly like a
+pairing key (`Authorization: Bearer <id>.<secret>`), and add `target_user` — the user whose
+bridge/subscription should run the job:
+
+```json
+{"backend": "cursor", "prompt": "…", "target_user": "alice"}
+```
+
+The job runs on **alice's** subscription. A different `target_user` routes to that user instead.
+Omitting it with an app credential is a `400`. (A bridge or legacy pairing-key caller routes to
+itself and ignores `target_user`.)
+
+**Reading back is also per-user.** A job lives in the target user's namespace, so an app must
+pass the **same `target_user`** as a query parameter on the read-side calls too — otherwise the
+lookup runs under the app's own identity and 404s:
+
+```
+GET    /v1/jobs/{id}?wait=1&target_user=alice
+DELETE /v1/jobs/{id}?target_user=alice
+GET    /v1/bridge/online?target_user=alice
+```
+
+For a bridge or legacy caller these are self-scoped and the parameter is optional (naming a
+different user is rejected).
+
+### Signing in (operators)
+
+Humans use the **`/login`** page — an HTML page, not a JSON endpoint. It offers OIDC sign-in
+("Sign in with Google", or your configured provider) and a bootstrap-admin-token field. On
+success the browser is routed **by role**: an admin lands on the **`/admin`** console, a regular
+user on **`/`** (their own status page). The **first user ever to sign in becomes the admin**;
+everyone after is a regular user until an admin promotes them.
+
+### Admin API (`/v1/admin/*`)
+
+Every route requires the admin scope (an OIDC admin session, or the bootstrap `RELAYENT_ADMIN_TOKEN`
+as a bearer). None of these ever return prompt or result content.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/v1/admin/users` | List users + per-user activity (no content) |
+| `POST` | `/v1/admin/users` | Pre-provision a user |
+| `POST` | `/v1/admin/users/{sub}/role` | Grant/revoke admin — `{"role":"admin"\|"user"}` |
+| `POST` | `/v1/admin/users/{sub}/disabled` | Disable/re-enable (`?disabled=true\|false`) |
+| `DELETE` | `/v1/admin/users/{sub}` | Delete a user record |
+| `POST` | `/v1/admin/enroll-tokens` | Mint a one-time bridge-enrollment token |
+| `GET` | `/v1/admin/app-creds` | List app credentials (no secrets) |
+| `POST` | `/v1/admin/app-creds` | Issue an app credential (secret shown once) |
+| `POST` | `/v1/admin/app-creds/{id}/revoke` | Revoke an app credential |
+| `GET` | `/v1/admin/audit` | Recent activity — who/when/backend/status/bytes, no content |
+| `GET` | `/v1/admin/config` | Effective relay config — no secret values |
+| `GET` | `/v1/admin/backends` | List backends and whether each is enabled |
+| `POST` | `/v1/admin/backends/{name}` | Enable/disable a backend — `{"enabled":true\|false}` |
+
+An admin cannot demote or delete **themselves** (last-admin lockout guard). `GET /v1/admin/config`
+returns only non-secret values plus booleans for whether the pairing key / admin token are set;
+config itself is env/compose-driven (change `.env`, then `docker compose up -d`).
+
+**Backend exposure policy.** An admin can disable a backend globally. A disabled backend is
+**omitted** from `GET /v1/bridge/capabilities` and **refused** at `POST /v1/jobs` with `403`, for
+every caller — so an integrating app should treat "not present in capabilities" as "not available",
+and be ready for a `403` if it enqueues a backend that was disabled after discovery. This is how a
+public surface (e.g. the demo) is kept to a safe subset like `cursor` only.
+
+Bridges obtain their own credential by redeeming an enrollment token at **`POST /v1/enroll`** — see
+[INSTALL.md](INSTALL.md#multi-user-multi-tenant-mode). Full request/response detail for every
+endpoint is in [`openapi.yaml`](openapi.yaml).
+
+---
+
 ## Concepts
 
 ### Architecture
@@ -263,14 +343,22 @@ Your app ──POST /v1/jobs──▶ Relay ◀──poll── Bridge ──▶
 
 ### Authentication
 
-Every request except `/v1/health` requires:
+Every request except `/v1/health` requires a bearer token:
 
 ```
-Authorization: Bearer <pairing-key>
+Authorization: Bearer <token>
 ```
 
-The key is a bearer token — possession is authorization. There is no per-user identity and no
-selective revocation. Store it as a secret; never log, embed in a URL, or commit it. See
+What the token is depends on the deployment model:
+
+- **Single-key:** one shared **pairing key**. Possession is authorization; there is no per-user
+  identity and no selective revocation.
+- **Multi-tenant:** an **app credential** (`<id>.<secret>`, issued by an admin, names `target_user`
+  per job) or a **bridge credential** (obtained via enrollment). Humans use OIDC sessions from
+  `/login`, or the bootstrap admin token. Credentials are scoped and individually revocable, and
+  every job is isolated to one user. See [Admin & multi-tenant](#admin--multi-tenant).
+
+In all cases the token is a secret: never log it, embed it in a URL, or commit it. See
 [SECURITY.md](SECURITY.md).
 
 ### Status codes

@@ -154,6 +154,13 @@ type AdminUser struct {
 	BridgeOnline bool   `json:"bridge_online"` // is any bound bridge polling?
 	PendingJobs  int    `json:"pending_jobs"`  // queued for this user
 	Bridges      int    `json:"bridges"`       // number of enrolled bridges
+
+	// Where this user's bridge runs, as the bridge itself last self-reported. The
+	// relay cannot inspect the machine (outbound-only by design); these come from
+	// the capabilities report, so they are as accurate as the last poll.
+	BridgeHost       string `json:"bridge_host,omitempty"`        // bridge machine hostname
+	BridgeVersion    string `json:"bridge_version,omitempty"`     // bridge build version
+	BridgeReportedAt string `json:"bridge_reported_at,omitempty"` // RFC3339 of last report
 }
 
 // CreateUserRequest creates a user directly (for non-OIDC bootstrap/testing);
@@ -163,6 +170,47 @@ type CreateUserRequest struct {
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name,omitempty"`
 	Role        string `json:"role,omitempty"` // "admin" | "user" (default user)
+}
+
+// SetUserRoleRequest grants or revokes admin for an existing user.
+type SetUserRoleRequest struct {
+	Role string `json:"role"` // "admin" | "user"
+}
+
+// AdminBridge is one enrolled bridge binding as shown on the admin surface. The
+// credential secret is never included — only the public bridge id and timestamps.
+type AdminBridge struct {
+	BridgeID   string `json:"bridge_id"`
+	EnrolledAt string `json:"enrolled_at"` // RFC3339
+	LastSeen   string `json:"last_seen"`   // RFC3339
+}
+
+// AdminBackend is one backend: its global exposure policy (Enabled) plus a rollup
+// of what bridges actually report for it. Policy and readiness are different
+// things — Enabled is the admin allowing it; the readiness fields say whether any
+// bridge can actually run it. Supported=false means the adapter is a stub (e.g.
+// gemini) and it can never run regardless of policy.
+type AdminBackend struct {
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+
+	// Rollup across all bridges that have reported. ReadyBridges counts bridges
+	// where the backend is installed AND supported; InstalledBridges counts where
+	// the CLI is merely present. Supported is a property of the adapter, not a
+	// count. ReportingBridges is how many bridges reported at all (0 = unknown).
+	Supported        bool `json:"supported"`
+	ReportingBridges int  `json:"reporting_bridges"`
+	InstalledBridges int  `json:"installed_bridges"`
+	ReadyBridges     int  `json:"ready_bridges"`
+
+	// Hosts are the bridge machine names that reported this backend, so the admin
+	// UI can name the actual machine to act on rather than say "the bridge".
+	Hosts []string `json:"hosts,omitempty"`
+}
+
+// SetBackendRequest enables or disables one backend globally.
+type SetBackendRequest struct {
+	Enabled bool `json:"enabled"`
 }
 
 // EnrollTokenRequest asks the relay to mint a one-time enrollment token for a
@@ -188,6 +236,35 @@ type CreateAppCredRequest struct {
 type CreateAppCredResponse struct {
 	AppID      string `json:"app_id"`
 	Credential string `json:"credential"` // "<id>.<secret>" — save this now
+}
+
+// AdminConfig is a read-only snapshot of the relay's effective configuration,
+// shown in the admin dashboard's Configure view. Secrets are NEVER included —
+// only whether they are set, and non-secret identifiers (issuer, client id).
+// These values are env/compose-driven; changing them means editing the relay's
+// .env and running `docker compose up -d`, not a UI write.
+type AdminConfig struct {
+	Version      string `json:"version"`
+	Hostname     string `json:"hostname,omitempty"` // the relay's own host (os.Hostname)
+	Listen       string `json:"listen"`             // bind address, e.g. ":8787"
+	TrustProxy   bool   `json:"trust_proxy"`        // honours X-Forwarded-* from a trusted proxy
+	StoreEnabled bool   `json:"store_enabled"`      // multi-tenant control plane on /data
+	DataDir      string `json:"data_dir"`           // where the store lives, if enabled
+
+	PairingKeySet bool `json:"pairing_key_set"` // legacy shared key still accepted (value never shown)
+	AdminTokenSet bool `json:"admin_token_set"` // bootstrap admin bearer configured
+
+	OIDCEnabled  bool   `json:"oidc_enabled"`
+	OIDCIssuer   string `json:"oidc_issuer,omitempty"`    // non-secret
+	OIDCClientID string `json:"oidc_client_id,omitempty"` // non-secret (public identifier)
+	OIDCRedirect string `json:"oidc_redirect,omitempty"`  // non-secret
+	OIDCProvider string `json:"oidc_provider,omitempty"`  // friendly name, e.g. "Google"
+	HostedDomain string `json:"hosted_domain,omitempty"`  // Workspace lock, if any
+
+	// DemoURL, if set (RELAYENT_DEMO_URL), is the public demo/playground this relay
+	// backs. Non-secret; the console shows a "View demo" link when present. The demo
+	// itself never links back — it is a public surface and must not advertise /admin.
+	DemoURL string `json:"demo_url,omitempty"`
 }
 
 // ErrorResponse is the uniform error envelope for 4xx/5xx responses.

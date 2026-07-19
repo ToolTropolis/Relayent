@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -49,8 +50,14 @@ var (
 	bktEnroll   = []byte("enroll_tokens")   // sha256(token)-> EnrollToken (JSON)
 	bktBindings = []byte("bridge_bindings") // bridge_id    -> BridgeBinding (JSON)
 	bktAudit    = []byte("audit")           // seq (uint64) -> AuditEvent (JSON)
-	allBuckets  = [][]byte{bktUsers, bktAppCreds, bktEnroll, bktBindings, bktAudit}
+	bktSettings = []byte("settings")        // key          -> value (JSON) — global config
+	allBuckets  = [][]byte{bktUsers, bktAppCreds, bktEnroll, bktBindings, bktAudit, bktSettings}
 )
+
+// settingDisabledBackends is the settings key holding the set of backend names an
+// admin has switched OFF. A backend NOT in this set is enabled — so a fresh store
+// exposes whatever bridges report, and disabling is an explicit, auditable action.
+const settingDisabledBackends = "disabled_backends"
 
 // Store is the relay's durable control plane. All content (prompts, results) is
 // deliberately excluded. A nil *Store is valid and means "legacy mode, no
@@ -243,6 +250,113 @@ func (s *Store) SetUserDisabled(sub string, disabled bool) error {
 	})
 }
 
+// SetUserRole changes a user's role (admin|user). Unlike UpsertUser — which
+// preserves an existing role so a normal login can't self-promote — this is the
+// explicit, admin-only path to grant or revoke admin.
+func (s *Store) SetUserRole(sub, role string) error {
+	if !s.Enabled() {
+		return nil
+	}
+	if role != RoleAdmin && role != RoleUser {
+		return fmt.Errorf("invalid role %q", role)
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bktUsers)
+		v := b.Get([]byte(sub))
+		if v == nil {
+			return ErrNotFound
+		}
+		var u User
+		if err := json.Unmarshal(v, &u); err != nil {
+			return err
+		}
+		u.Role = role
+		return b.Put([]byte(sub), mustJSON(u))
+	})
+}
+
+// DeleteUser removes a user record. Their bridge bindings and app credentials
+// are not touched here — revoke those separately. Used to clean up a
+// mis-provisioned or test account.
+func (s *Store) DeleteUser(sub string) error {
+	if !s.Enabled() {
+		return nil
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bktUsers)
+		if b.Get([]byte(sub)) == nil {
+			return ErrNotFound
+		}
+		return b.Delete([]byte(sub))
+	})
+}
+
+// --- backend policy (global) ---
+//
+// The relay stores the set of backend names an admin has DISABLED. A name absent
+// from the set is enabled, so an empty/legacy store exposes whatever bridges
+// report — disabling is always the explicit action. This gates what apps and the
+// demo can reach (e.g. keep a public demo on `cursor` only, off paid subscriptions).
+
+// DisabledBackends returns the set of disabled backend names (may be empty).
+func (s *Store) DisabledBackends() (map[string]bool, error) {
+	out := map[string]bool{}
+	if !s.Enabled() {
+		return out, nil
+	}
+	err := s.db.View(func(tx *bolt.Tx) error {
+		v := tx.Bucket(bktSettings).Get([]byte(settingDisabledBackends))
+		if v == nil {
+			return nil
+		}
+		var names []string
+		if err := json.Unmarshal(v, &names); err != nil {
+			return err
+		}
+		for _, n := range names {
+			out[n] = true
+		}
+		return nil
+	})
+	return out, err
+}
+
+// SetBackendEnabled flips one backend on or off, persisting the disabled set.
+// nil store is a no-op (legacy mode has no admin to call this).
+func (s *Store) SetBackendEnabled(name string, enabled bool) error {
+	if !s.Enabled() {
+		return nil
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("backend name is required")
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bktSettings)
+		set := map[string]bool{}
+		if v := b.Get([]byte(settingDisabledBackends)); v != nil {
+			var names []string
+			if err := json.Unmarshal(v, &names); err != nil {
+				return err
+			}
+			for _, n := range names {
+				set[n] = true
+			}
+		}
+		if enabled {
+			delete(set, name)
+		} else {
+			set[name] = true
+		}
+		names := make([]string, 0, len(set))
+		for n := range set {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		return b.Put([]byte(settingDisabledBackends), mustJSON(names))
+	})
+}
+
 // --- app credentials ---
 
 // PutAppCred stores an issued app credential (KeyHash already computed by the
@@ -348,6 +462,22 @@ func (s *Store) ListBindingsForUser(sub string) ([]BridgeBinding, error) {
 	return out, err
 }
 
+// DeleteBinding removes a bridge binding by its public id — revoking that bridge.
+// The bridge's credential stops resolving on its next request. Used to retire a
+// lost/decommissioned bridge, or to clean up a stale binding.
+func (s *Store) DeleteBinding(bridgeID string) error {
+	if !s.Enabled() {
+		return nil
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket(bktBindings)
+		if bkt.Get([]byte(bridgeID)) == nil {
+			return ErrNotFound
+		}
+		return bkt.Delete([]byte(bridgeID))
+	})
+}
+
 // ListAppCreds returns all app credentials (without secrets — only public ids
 // and metadata) for the admin surface.
 func (s *Store) ListAppCreds() ([]AppCred, error) {
@@ -386,6 +516,23 @@ func (s *Store) RevokeAppCred(id string) error {
 		}
 		c.Revoked = true
 		return bkt.Put([]byte(id), mustJSON(c))
+	})
+}
+
+// DeleteAppCred removes an app credential record entirely. Intended for tidying a
+// credential you have already revoked (or an unused one). There is deliberately no
+// "un-revoke": a retired secret must never be resurrected — issue a new credential
+// instead.
+func (s *Store) DeleteAppCred(id string) error {
+	if !s.Enabled() {
+		return nil
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket(bktAppCreds)
+		if bkt.Get([]byte(id)) == nil {
+			return ErrNotFound
+		}
+		return bkt.Delete([]byte(id))
 	})
 }
 
