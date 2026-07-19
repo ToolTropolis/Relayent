@@ -858,7 +858,7 @@ const CLI_INFO = {
   claude: { cli:"Claude Code", install:"npm i -g @anthropic-ai/claude-code", login:"claude", url:"https://claude.com/claude-code" },
   codex:  { cli:"Codex CLI",  install:"npm i -g @openai/codex",           login:"codex login",         url:"https://developers.openai.com/codex" },
   cursor: { cli:"Cursor CLI", install:"curl https://cursor.com/install -fsS | bash", login:"cursor-agent login", url:"https://cursor.com/cli" },
-  gemini: { cli:"Gemini CLI", install:"", login:"", url:"https://github.com/google-gemini/gemini-cli" },
+  gemini: { cli:"Gemini CLI", install:"npm i -g @google/gemini-cli", login:"gemini", url:"https://github.com/google-gemini/gemini-cli" },
 };
 // Map a backend's reported state to a readiness label + guidance (kind: how to
 // render). Policy (allowed) and readiness are separate: a backend serves jobs

@@ -277,15 +277,9 @@ func (b *bridge) postResult(ctx context.Context, id string, res api.ResultReques
 	return nil
 }
 
-// unavailableReason explains why a backend can't run, distinguishing "the adapter
-// isn't implemented yet" from "the CLI isn't installed here".
+// unavailableReason explains why a backend can't run. Every adapter is now
+// implemented, so the only reason is the CLI not being installed on this machine.
 func (b *bridge) unavailableReason(name string, a adapters.Adapter) string {
-	if bp, ok := a.(interface{ BinPresent() bool }); ok {
-		if bp.BinPresent() {
-			return fmt.Sprintf("backend %q is not supported yet by this bridge (adapter is a stub)", name)
-		}
-		return fmt.Sprintf("backend %q is not supported yet and its CLI is not installed on this machine", name)
-	}
 	return fmt.Sprintf("backend %q CLI not installed on this machine", name)
 }
 

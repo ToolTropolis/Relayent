@@ -59,27 +59,19 @@ func (r *Registry) Available() []string {
 	return out
 }
 
-// binPresenter is implemented by stub adapters, which report Available()==false
-// (they can't run jobs) but can still say whether the CLI exists on this host.
-type binPresenter interface{ BinPresent() bool }
-
 // Describe reports every known backend: whether its CLI is installed here, whether
 // the adapter is implemented, and whether it can actually run jobs (Ready).
-// The relay cannot see this machine, so the bridge is the source of truth.
+// The relay cannot see this machine, so the bridge is the source of truth. Every
+// registered adapter is now implemented (supported), so installed == ready == the
+// CLI being present; the fields are kept distinct for the wire contract.
 func (r *Registry) Describe(ctx context.Context) []api.BackendInfo {
 	out := make([]api.BackendInfo, 0, len(r.adapters))
 	for name, a := range r.adapters {
-		ready := a.Available() // implemented adapters gate on the CLI being present
-		installed, supported := ready, true
-		// A stub adapter is never Ready; ask it separately whether the CLI exists.
-		if bp, ok := a.(binPresenter); ok {
-			supported = false
-			installed = bp.BinPresent()
-		}
+		ready := a.Available() // the CLI is present
 		info := api.BackendInfo{
 			Name:      name,
-			Installed: installed,
-			Supported: supported,
+			Installed: ready,
+			Supported: true,
 			Ready:     ready,
 		}
 		// Only ask a usable backend for its models: probing a missing CLI would

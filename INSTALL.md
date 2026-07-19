@@ -148,7 +148,7 @@ starting point.
 | `claude` | Claude Code | `npm i -g @anthropic-ai/claude-code` | https://claude.com/claude-code | `claude` (prompts to log in) | `claude --version` |
 | `codex` | Codex CLI | `npm i -g @openai/codex` | https://developers.openai.com/codex | `codex login` | `codex --version` |
 | `cursor` | Cursor CLI | `curl https://cursor.com/install -fsS \| bash` | https://cursor.com/cli | `cursor-agent login` | `cursor-agent status` → `✓ Logged in as <you>` |
-| `gemini` | Gemini CLI | *(not yet supported — adapter is a stub)* | https://github.com/google-gemini/gemini-cli | — | — |
+| `gemini` | Gemini CLI | `npm i -g @google/gemini-cli` | https://github.com/google-gemini/gemini-cli | `gemini` (prompts to log in) | `gemini --version` |
 
 At least one must succeed. **Signed in matters more than installed**: Relayent reuses the CLI's
 own session and never handles credentials, so an installed-but-logged-out CLI cannot run jobs.
@@ -784,7 +784,7 @@ rest are environment-only.
 | `RELAYENT_CLAUDE_BIN` | `claude` | Override the Claude CLI path. |
 | `RELAYENT_CODEX_BIN` | `codex` | Override the Codex CLI path. |
 | `RELAYENT_CURSOR_BIN` | `cursor-agent` | Override the Cursor CLI path. |
-| `RELAYENT_GEMINI_BIN` | `gemini` | Override the Gemini CLI path (adapter is a stub). |
+| `RELAYENT_GEMINI_BIN` | `gemini` | Override the Gemini CLI path. |
 
 ### The workspace
 
