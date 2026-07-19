@@ -116,8 +116,19 @@ const demoHTML = `<!doctype html>
     font:inherit; font-weight:650; cursor:pointer; }
   button:hover { filter:brightness(1.08); }
   button:disabled { opacity:.5; cursor:not-allowed; }
-  footer { text-align:center; color:var(--faint); font-size:.76rem; padding:.6rem; }
+  .ghlink { display:inline-flex; align-items:center; gap:.4rem; color:var(--muted);
+    text-decoration:none; font-size:.84rem; border:1px solid var(--line); padding:.35rem .6rem;
+    border-radius:9px; }
+  .ghlink:hover { color:var(--fg); border-color:var(--accent); }
+  .ghlink svg { width:15px; height:15px; fill:currentColor; }
+  footer { display:flex; flex-wrap:wrap; align-items:center; justify-content:center;
+    gap:.4rem 1rem; color:var(--faint); font-size:.78rem; padding:.9rem .6rem;
+    border-top:1px solid var(--line-soft); }
+  footer .tagline { color:var(--faint); }
+  footer nav { display:flex; flex-wrap:wrap; gap:.9rem; align-items:center; }
   footer a { color:var(--muted); text-decoration:none; }
+  footer a:hover { color:var(--fg); }
+  footer .sep { color:var(--line); }
   @media (prefers-reduced-motion:reduce) { *{animation:none !important; transition:none !important;} }
 </style>
 </head>
@@ -127,6 +138,10 @@ const demoHTML = `<!doctype html>
     <b>%TITLE%</b>
     <span class="badge" id="status"><span class="dot"></span><span id="status-t">connecting…</span></span>
     <span class="grow"></span>
+    <a class="ghlink" href="https://github.com/ToolTropolis/Relayent" target="_blank" rel="noopener noreferrer" title="Relayent on GitHub">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
     <span class="sel">
       <label for="model">Model</label>
       <select id="model"><option>loading…</option></select>
@@ -143,7 +158,17 @@ const demoHTML = `<!doctype html>
       <button id="send" type="submit" disabled>Send</button>
     </form>
   </main>
-  <footer>Powered by <a href="https://github.com/ToolTropolis/Relayent" target="_blank" rel="noopener noreferrer">Relayent</a> — your subscription, from anywhere.</footer>
+  <footer>
+    <span class="tagline">Powered by <a href="https://github.com/ToolTropolis/Relayent" target="_blank" rel="noopener noreferrer">Relayent</a> — your subscription, from anywhere.</span>
+    <nav aria-label="Project links">
+      <a href="https://github.com/ToolTropolis/Relayent" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <span class="sep">·</span>
+      <a href="https://github.com/ToolTropolis/Relayent/blob/main/README.md" target="_blank" rel="noopener noreferrer">Docs</a>
+      <a href="https://github.com/ToolTropolis/Relayent/blob/main/API.md" target="_blank" rel="noopener noreferrer">API</a>
+      <a href="https://github.com/ToolTropolis/Relayent/blob/main/INSTALL.md" target="_blank" rel="noopener noreferrer">Install</a>
+      <a href="https://github.com/ToolTropolis/Relayent/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">Security</a>
+    </nav>
+  </footer>
 
 <script nonce="%NONCE%">
 const $ = id => document.getElementById(id);
