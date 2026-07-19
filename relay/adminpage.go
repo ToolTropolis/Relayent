@@ -423,11 +423,12 @@ const adminHTML = `<!doctype html>
         </div>
       </div>
       <div class="card">
-        <h2>Bridge presence</h2>
+        <h2>Bridges <span class="note muted">— one row per enrolled bridge</span></h2>
         <div class="tablewrap"><table>
-          <thead><tr><th>User</th><th>Bridge</th><th>Host</th><th>Version</th><th>Last seen</th><th>Bridges</th><th>Pending</th></tr></thead>
-          <tbody id="presence"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+          <thead><tr><th>User</th><th>Bridge ID</th><th>Presence</th><th>Host</th><th>Version</th><th>Enrolled</th><th>Last seen</th><th></th></tr></thead>
+          <tbody id="presence"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
         </table></div>
+        <p class="hint">Presence, host, and version are tracked per user (whichever of that user's bridges last polled). Revoke retires a bridge — its credential stops working immediately.</p>
       </div>
     </section>
 
@@ -771,18 +772,46 @@ async function loadStatus() {
   $("s-online").textContent = String(online);
   $("s-pending").textContent = String(pending);
   const tb = $("presence"); tb.replaceChildren();
-  if (!users.length) { emptyRow(tb, 7, "No users yet."); return; }
+  if (!users.length) { emptyRow(tb, 8, "No users yet."); return; }
+  let anyRow = false;
   for (const u of users) {
-    const tr = document.createElement("tr");
-    tr.appendChild(cell(u.email || u.sub));
-    const bt = document.createElement("td"); bt.appendChild(pill(u.bridge_online, "online", "offline")); tr.appendChild(bt);
-    tr.appendChild(cell(u.bridge_host || "—"));
-    tr.appendChild(cell(u.bridge_version || "—"));
-    tr.appendChild(cell(u.bridge_reported_at ? new Date(u.bridge_reported_at).toLocaleString() : "—"));
-    tr.appendChild(cell(String(u.bridges)));
-    tr.appendChild(cell(String(u.pending_jobs)));
-    tb.appendChild(tr);
+    // Fetch this user's enrolled bridges (one row each). Host/version/presence are
+    // per-user (the queue aggregates polls), shown on each of the user's rows.
+    let binds = [];
+    try { const d = await api("GET", "/v1/admin/users/" + encodeURIComponent(u.sub) + "/bridges"); binds = (d && d.bridges) || []; }
+    catch (e) { /* skip on error */ }
+    if (!binds.length) {
+      // A user with no enrolled bridge still shows once, so they're visible.
+      const tr = document.createElement("tr");
+      tr.appendChild(cell(u.email || u.sub));
+      const idc = cell("—"); idc.className = "muted"; tr.appendChild(idc);
+      const pt = document.createElement("td"); pt.appendChild(pill(false, "online", "no bridge")); tr.appendChild(pt);
+      tr.appendChild(cell("—")); tr.appendChild(cell("—")); tr.appendChild(cell("—")); tr.appendChild(cell("—")); tr.appendChild(cell(""));
+      tb.appendChild(tr); anyRow = true; continue;
+    }
+    for (const b of binds) {
+      anyRow = true;
+      const tr = document.createElement("tr");
+      tr.appendChild(cell(u.email || u.sub));
+      const idc = document.createElement("td"); const code = document.createElement("code"); code.textContent = b.bridge_id; idc.appendChild(code); tr.appendChild(idc);
+      const pt = document.createElement("td"); pt.appendChild(pill(u.bridge_online, "online", "offline")); tr.appendChild(pt);
+      tr.appendChild(cell(u.bridge_host || "—"));
+      tr.appendChild(cell(u.bridge_version || "—"));
+      tr.appendChild(cell(b.enrolled_at ? new Date(b.enrolled_at).toLocaleDateString() : "—"));
+      tr.appendChild(cell(b.last_seen ? new Date(b.last_seen).toLocaleString() : "—"));
+      const act = document.createElement("td"); const wrap = document.createElement("div"); wrap.className = "actions";
+      wrap.appendChild(btn("Revoke", "danger sm", () => revokeBridge(b.bridge_id, u.email || u.sub)));
+      act.appendChild(wrap); tr.appendChild(act);
+      tb.appendChild(tr);
+    }
   }
+  if (!anyRow) emptyRow(tb, 8, "No bridges enrolled yet.");
+}
+async function revokeBridge(id, who) {
+  if (!confirm("Revoke bridge " + id + " for " + who + "? Its credential stops working immediately.")) return;
+  try { await api("DELETE", "/v1/admin/bridges/" + encodeURIComponent(id));
+    banner("Revoked bridge " + id, "ok"); loadStatus(); }
+  catch (e) { banner("Error: " + e.message, "bad"); }
 }
 
 /* ---- ENROLL ---- */

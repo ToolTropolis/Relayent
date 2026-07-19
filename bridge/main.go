@@ -147,6 +147,7 @@ type bridge struct {
 // run is the poll loop: claim a job, process it, repeat, until ctx is cancelled.
 func (b *bridge) run(ctx context.Context) {
 	backoff := time.Second
+	pollFailed := false // true after a poll error, so recovery can re-report caps
 	for {
 		if ctx.Err() != nil {
 			return
@@ -154,6 +155,7 @@ func (b *bridge) run(ctx context.Context) {
 		job, ok, err := b.claimNext(ctx)
 		if err != nil {
 			log.Printf("[relayent-bridge] poll error: %v (retrying in %s)", err, backoff)
+			pollFailed = true
 			if !sleepCtx(ctx, backoff) {
 				return
 			}
@@ -163,6 +165,13 @@ func (b *bridge) run(ctx context.Context) {
 			continue
 		}
 		backoff = time.Second
+		// On recovery from a poll failure (typically a relay restart, which loses
+		// the in-memory capabilities), re-report immediately so the admin view shows
+		// host/backends within a poll instead of waiting for the ~60s caps ticker.
+		if pollFailed {
+			pollFailed = false
+			b.reportCapabilities(ctx)
+		}
 		if !ok {
 			continue // 204: no job within the wait window; poll again
 		}

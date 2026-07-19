@@ -177,6 +177,14 @@ type SetUserRoleRequest struct {
 	Role string `json:"role"` // "admin" | "user"
 }
 
+// AdminBridge is one enrolled bridge binding as shown on the admin surface. The
+// credential secret is never included — only the public bridge id and timestamps.
+type AdminBridge struct {
+	BridgeID   string `json:"bridge_id"`
+	EnrolledAt string `json:"enrolled_at"` // RFC3339
+	LastSeen   string `json:"last_seen"`   // RFC3339
+}
+
 // AdminBackend is one backend and whether it is enabled (exposed to apps/demo and
 // accepted at enqueue). Disabling is the global exposure control.
 type AdminBackend struct {

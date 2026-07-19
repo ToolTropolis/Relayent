@@ -265,6 +265,35 @@ paths:
         "200": { description: Revoked }
         "403": { description: Not an admin }
         "404": { description: Unknown credential }
+  /v1/admin/users/{sub}/bridges:
+    get:
+      summary: List a user's enrolled bridges — one per binding, no secrets (admin)
+      parameters:
+        - { name: sub, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The user's bridge bindings (public id + timestamps)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bridges:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminBridge" }
+        "403": { description: Not an admin }
+  /v1/admin/bridges/{id}:
+    delete:
+      summary: Revoke a bridge binding by its public id (admin)
+      description: |
+        Retires a bridge — its credential stops resolving on the next request.
+        Used for a lost/decommissioned bridge or to clean up a stale binding.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Revoked }
+        "403": { description: Not an admin }
+        "404": { description: Unknown bridge }
   /v1/admin/backends:
     get:
       summary: List backends and whether each is enabled (admin)
@@ -650,6 +679,12 @@ components:
       required: [role]
       properties:
         role: { type: string, enum: [admin, user] }
+    AdminBridge:
+      type: object
+      properties:
+        bridge_id: { type: string }
+        enrolled_at: { type: string, format: date-time }
+        last_seen: { type: string, format: date-time }
     AdminBackend:
       type: object
       properties:

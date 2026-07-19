@@ -462,6 +462,22 @@ func (s *Store) ListBindingsForUser(sub string) ([]BridgeBinding, error) {
 	return out, err
 }
 
+// DeleteBinding removes a bridge binding by its public id — revoking that bridge.
+// The bridge's credential stops resolving on its next request. Used to retire a
+// lost/decommissioned bridge, or to clean up a stale binding.
+func (s *Store) DeleteBinding(bridgeID string) error {
+	if !s.Enabled() {
+		return nil
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket(bktBindings)
+		if bkt.Get([]byte(bridgeID)) == nil {
+			return ErrNotFound
+		}
+		return bkt.Delete([]byte(bridgeID))
+	})
+}
+
 // ListAppCreds returns all app credentials (without secrets — only public ids
 // and metadata) for the admin surface.
 func (s *Store) ListAppCreds() ([]AppCred, error) {

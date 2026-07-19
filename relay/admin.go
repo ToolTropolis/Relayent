@@ -251,6 +251,43 @@ func (s *server) adminConfig(w http.ResponseWriter, r *http.Request, p *Principa
 	writeJSON(w, http.StatusOK, cfg)
 }
 
+// adminListUserBridges lists a user's enrolled bridges (bindings) — one per row,
+// with public id and timestamps, never the credential. Presence/host are tracked
+// per user (the queue aggregates polls), so those stay on the user row; this is
+// the per-BINDING inventory, used to see and revoke individual bridges.
+func (s *server) adminListUserBridges(w http.ResponseWriter, r *http.Request, p *Principal) {
+	sub := r.PathValue("sub")
+	binds, err := s.store.ListBindingsForUser(sub)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not list bridges")
+		return
+	}
+	out := make([]api.AdminBridge, 0, len(binds))
+	for _, b := range binds {
+		ab := api.AdminBridge{BridgeID: b.BridgeID}
+		if !b.EnrolledAt.IsZero() {
+			ab.EnrolledAt = b.EnrolledAt.UTC().Format(time.RFC3339)
+		}
+		if !b.LastSeen.IsZero() {
+			ab.LastSeen = b.LastSeen.UTC().Format(time.RFC3339)
+		}
+		out = append(out, ab)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"bridges": out})
+}
+
+// adminRevokeBridge removes a bridge binding by its public id. The bridge's
+// credential stops working on its next request — used to retire a lost or stale
+// bridge.
+func (s *server) adminRevokeBridge(w http.ResponseWriter, r *http.Request, p *Principal) {
+	id := r.PathValue("id")
+	if err := s.store.DeleteBinding(id); err != nil {
+		writeErr(w, http.StatusNotFound, "unknown bridge")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"bridge_id": id, "status": "revoked"})
+}
+
 // adminListBackends reports every known backend and whether it is enabled. This
 // is the global exposure policy — a disabled backend is hidden from apps and the
 // demo and refused at enqueue, so a public demo can be kept to (say) cursor only,
