@@ -34,7 +34,7 @@ func (s *server) adminListUsers(w http.ResponseWriter, r *http.Request, p *Princ
 	out := make([]api.AdminUser, 0, len(users))
 	for _, u := range users {
 		bridges, _ := s.store.ListBindingsForUser(u.Sub)
-		out = append(out, api.AdminUser{
+		au := api.AdminUser{
 			Sub:          u.Sub,
 			Email:        u.Email,
 			DisplayName:  u.DisplayName,
@@ -43,7 +43,15 @@ func (s *server) adminListUsers(w http.ResponseWriter, r *http.Request, p *Princ
 			BridgeOnline: s.q.BridgeOnline(u.Sub),
 			PendingJobs:  s.q.PendingCount(u.Sub),
 			Bridges:      len(bridges),
-		})
+		}
+		// Where the bridge runs, from its last self-report (the relay can't inspect
+		// the machine directly). Present only once a bridge has reported.
+		if caps, reportedAt, _ := s.q.Capabilities(u.Sub); !reportedAt.IsZero() {
+			au.BridgeHost = caps.Hostname
+			au.BridgeVersion = caps.Version
+			au.BridgeReportedAt = reportedAt.UTC().Format(time.RFC3339)
+		}
+		out = append(out, au)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": out})
 }
@@ -214,8 +222,10 @@ func (s *server) adminAudit(w http.ResponseWriter, r *http.Request, p *Principal
 // secret is set, plus non-secret identifiers (issuer, client id, redirect). The
 // values are env/compose-driven; the UI shows them but cannot change them.
 func (s *server) adminConfig(w http.ResponseWriter, r *http.Request, p *Principal) {
+	hostname, _ := os.Hostname()
 	cfg := api.AdminConfig{
 		Version:       Version,
+		Hostname:      hostname,
 		Listen:        envDefault("RELAYENT_LISTEN", ":8787"),
 		TrustProxy:    s.trustProxy,
 		StoreEnabled:  s.store.Enabled(),

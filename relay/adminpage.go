@@ -425,8 +425,8 @@ const adminHTML = `<!doctype html>
       <div class="card">
         <h2>Bridge presence</h2>
         <div class="tablewrap"><table>
-          <thead><tr><th>User</th><th>Bridge</th><th>Enrolled bridges</th><th>Pending</th></tr></thead>
-          <tbody id="presence"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+          <thead><tr><th>User</th><th>Bridge</th><th>Host</th><th>Version</th><th>Last seen</th><th>Bridges</th><th>Pending</th></tr></thead>
+          <tbody id="presence"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -771,11 +771,14 @@ async function loadStatus() {
   $("s-online").textContent = String(online);
   $("s-pending").textContent = String(pending);
   const tb = $("presence"); tb.replaceChildren();
-  if (!users.length) { emptyRow(tb, 4, "No users yet."); return; }
+  if (!users.length) { emptyRow(tb, 7, "No users yet."); return; }
   for (const u of users) {
     const tr = document.createElement("tr");
     tr.appendChild(cell(u.email || u.sub));
     const bt = document.createElement("td"); bt.appendChild(pill(u.bridge_online, "online", "offline")); tr.appendChild(bt);
+    tr.appendChild(cell(u.bridge_host || "—"));
+    tr.appendChild(cell(u.bridge_version || "—"));
+    tr.appendChild(cell(u.bridge_reported_at ? new Date(u.bridge_reported_at).toLocaleString() : "—"));
     tr.appendChild(cell(String(u.bridges)));
     tr.appendChild(cell(String(u.pending_jobs)));
     tb.appendChild(tr);
@@ -799,6 +802,7 @@ async function loadConfig() {
   const c = await api("GET", "/v1/admin/config");
   kv($("cfg-relay"), [
     ["Version", c.version],
+    ["Host", c.hostname || "—"],
     ["Listen", c.listen],
     ["Trust proxy", yesno(c.trust_proxy)],
     ["Control-plane store", yesno(c.store_enabled)],

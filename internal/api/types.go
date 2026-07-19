@@ -154,6 +154,13 @@ type AdminUser struct {
 	BridgeOnline bool   `json:"bridge_online"` // is any bound bridge polling?
 	PendingJobs  int    `json:"pending_jobs"`  // queued for this user
 	Bridges      int    `json:"bridges"`       // number of enrolled bridges
+
+	// Where this user's bridge runs, as the bridge itself last self-reported. The
+	// relay cannot inspect the machine (outbound-only by design); these come from
+	// the capabilities report, so they are as accurate as the last poll.
+	BridgeHost       string `json:"bridge_host,omitempty"`        // bridge machine hostname
+	BridgeVersion    string `json:"bridge_version,omitempty"`     // bridge build version
+	BridgeReportedAt string `json:"bridge_reported_at,omitempty"` // RFC3339 of last report
 }
 
 // CreateUserRequest creates a user directly (for non-OIDC bootstrap/testing);
@@ -214,10 +221,11 @@ type CreateAppCredResponse struct {
 // .env and running `docker compose up -d`, not a UI write.
 type AdminConfig struct {
 	Version      string `json:"version"`
-	Listen       string `json:"listen"`        // bind address, e.g. ":8787"
-	TrustProxy   bool   `json:"trust_proxy"`   // honours X-Forwarded-* from a trusted proxy
-	StoreEnabled bool   `json:"store_enabled"` // multi-tenant control plane on /data
-	DataDir      string `json:"data_dir"`      // where the store lives, if enabled
+	Hostname     string `json:"hostname,omitempty"` // the relay's own host (os.Hostname)
+	Listen       string `json:"listen"`             // bind address, e.g. ":8787"
+	TrustProxy   bool   `json:"trust_proxy"`        // honours X-Forwarded-* from a trusted proxy
+	StoreEnabled bool   `json:"store_enabled"`      // multi-tenant control plane on /data
+	DataDir      string `json:"data_dir"`           // where the store lives, if enabled
 
 	PairingKeySet bool `json:"pairing_key_set"` // legacy shared key still accepted (value never shown)
 	AdminTokenSet bool `json:"admin_token_set"` // bootstrap admin bearer configured
