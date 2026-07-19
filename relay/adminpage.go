@@ -454,7 +454,7 @@ const adminHTML = `<!doctype html>
           <thead><tr><th>Backend</th><th>Policy</th><th>Readiness</th><th>What to do</th><th></th></tr></thead>
           <tbody id="backends"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
         </table></div>
-        <p class="hint"><b>Policy</b> is what you allow (the toggle). <b>Readiness</b> is whether a user's bridge can actually run it — a backend must be both <i>enabled</i> and <i>ready</i> to serve jobs. Readiness reflects the last bridge report across all users.</p>
+        <p class="hint"><b>Policy</b> is whether you <i>allow</i> this backend — a permission you set, independent of any machine. <b>Readiness</b> is whether a bridge can actually run it (the CLI installed and signed in). A backend serves jobs only when it is both <b>Allowed</b> and <b>Ready</b>; "Allowed" alone does not mean the CLI is installed. Readiness reflects the last bridge report.</p>
       </div>
     </section>
 
@@ -852,18 +852,49 @@ async function loadConfig() {
 }
 
 /* ---- BACKENDS ---- */
-// Map a backend's reported state to a readiness label + operator guidance. Policy
-// (enabled) and readiness are separate: a backend serves jobs only when BOTH hold.
+// Per-backend CLI install info. Commands are a starting point; the official page
+// is the source of truth for the current method and login flow.
+const CLI_INFO = {
+  claude: { cli:"Claude Code", install:"npm i -g @anthropic-ai/claude-code", login:"claude", url:"https://claude.com/claude-code" },
+  codex:  { cli:"Codex CLI",  install:"npm i -g @openai/codex",           login:"codex login",         url:"https://developers.openai.com/codex" },
+  cursor: { cli:"Cursor CLI", install:"curl https://cursor.com/install -fsS | bash", login:"cursor-agent login", url:"https://cursor.com/cli" },
+  gemini: { cli:"Gemini CLI", install:"", login:"", url:"https://github.com/google-gemini/gemini-cli" },
+};
+// Map a backend's reported state to a readiness label + guidance (kind: how to
+// render). Policy (allowed) and readiness are separate: a backend serves jobs
+// only when BOTH hold.
 function backendReadiness(b) {
   if (!b.supported)
-    return { ok:false, label:"Not supported", hint:"This backend is a stub — no working adapter yet. It can't run jobs." };
-  if (!b.reporting_bridges)
-    return { ok:false, label:"No bridge reporting", hint:"No user's bridge has reported yet. Start a bridge on a machine with this CLI." };
+    return { ok:false, label:"Not supported", kind:"text", hint:"This backend is a stub — no working adapter yet. It can't run jobs." };
   if (b.ready_bridges > 0)
-    return { ok:true, label:"Ready", hint:"Installed on "+b.ready_bridges+" bridge(s). If jobs fail, the CLI is likely logged out — run it on the bridge and sign in." };
+    return { ok:true, label:"Ready", kind:"text", hint:"Installed on "+b.ready_bridges+" bridge(s). If jobs fail, the CLI is likely logged out — run it on the bridge and sign in." };
   if (b.installed_bridges > 0)
-    return { ok:false, label:"Installed, not ready", hint:"The CLI is present but not usable. Check it runs and is signed in on the bridge." };
-  return { ok:false, label:"Not installed", hint:"No reporting bridge has this CLI. Install it, then sign in — it appears on the next poll." };
+    return { ok:false, label:"Installed, not ready", kind:"login", hint:"The CLI is present but not signed in. On the bridge run:" };
+  if (!b.reporting_bridges)
+    return { ok:false, label:"No bridge reporting", kind:"install", hint:"No bridge has reported. On the bridge machine, install and sign in:" };
+  return { ok:false, label:"Not installed", kind:"install", hint:"Install this CLI on the bridge, then sign in — it appears on the next poll:" };
+}
+// buildGuidance renders the What-to-do cell: text + (for install/login) the exact
+// commands as <code> and a link to the official page.
+function buildGuidance(name, r) {
+  const td = document.createElement("td");
+  td.className = "muted"; td.style.maxWidth = "40ch"; td.style.whiteSpace = "normal";
+  td.appendChild(document.createTextNode(r.hint + " "));
+  const info = CLI_INFO[name];
+  if (info && (r.kind === "install" || r.kind === "login")) {
+    if (r.kind === "install" && info.install) {
+      const c1 = document.createElement("code"); c1.textContent = info.install; c1.style.display = "inline-block"; c1.style.margin = ".2rem 0";
+      td.appendChild(document.createElement("br")); td.appendChild(c1);
+    }
+    if (info.login) {
+      const c2 = document.createElement("code"); c2.textContent = info.login; c2.style.display = "inline-block"; c2.style.margin = ".2rem 0";
+      td.appendChild(document.createElement("br")); td.appendChild(c2);
+    }
+    td.appendChild(document.createElement("br"));
+    const a = document.createElement("a"); a.href = info.url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = "Official " + info.cli + " docs ↗";
+    td.appendChild(a);
+  }
+  return td;
 }
 // timeAgo renders a short "Ns ago" / "Nm ago" for a timestamp.
 function timeAgo(iso) {
@@ -885,31 +916,32 @@ async function loadBackends() {
   for (const b of backends) {
     const tr = document.createElement("tr");
     tr.appendChild(cell(b.name));
-    // A stub (unsupported) backend can never run, so its policy toggle is
-    // meaningless — show it as unavailable with no enable/disable control.
+    // A stub (unsupported) backend can never run, so its policy is meaningless —
+    // show it as unavailable with no allow/block control.
     if (!b.supported) {
       const pol = cell("—"); pol.className = "muted"; tr.appendChild(pol);
       const rd = document.createElement("td"); rd.appendChild(pill(false, "unavailable", "unavailable")); tr.appendChild(rd);
-      const gd = cell("Not implemented yet — no adapter. Nothing to enable."); gd.className = "muted"; gd.style.maxWidth = "34ch"; gd.style.whiteSpace = "normal"; tr.appendChild(gd);
-      const act = cell(""); tr.appendChild(act);
+      tr.appendChild(buildGuidance(b.name, {kind:"text", hint:"Not implemented yet — no adapter. Nothing to allow."}));
+      tr.appendChild(cell(""));
       tb.appendChild(tr); continue;
     }
-    // Policy (the toggle state) — enabled/disabled.
-    const pol = document.createElement("td"); pol.appendChild(pill(b.enabled, "enabled", "disabled")); tr.appendChild(pol);
-    // Readiness — a separate axis from policy.
+    // Policy — whether the admin ALLOWS this backend. Separate from readiness:
+    // "Allowed" does not mean the CLI is installed.
+    const pol = document.createElement("td"); pol.appendChild(pill(b.enabled, "allowed", "blocked")); tr.appendChild(pol);
+    // Readiness — whether a bridge can actually run it.
     const r = backendReadiness(b);
     const rd = document.createElement("td"); rd.appendChild(pill(r.ok, r.label, r.label)); tr.appendChild(rd);
-    // Guidance.
-    const gd = cell(r.hint); gd.className = "muted"; gd.style.maxWidth = "34ch"; gd.style.whiteSpace = "normal"; tr.appendChild(gd);
-    // Toggle.
+    // Guidance — with real install/login commands + official link when not ready.
+    tr.appendChild(buildGuidance(b.name, r));
+    // Toggle — Allow / Block.
     const act = document.createElement("td"); const wrap = document.createElement("div"); wrap.className = "actions";
-    wrap.appendChild(btn(b.enabled ? "Disable" : "Enable", "ghost sm", () => setBackend(b.name, !b.enabled)));
+    wrap.appendChild(btn(b.enabled ? "Block" : "Allow", "ghost sm", () => setBackend(b.name, !b.enabled)));
     act.appendChild(wrap); tr.appendChild(act); tb.appendChild(tr);
   }
 }
 async function setBackend(name, enabled) {
   try { await api("POST", "/v1/admin/backends/" + encodeURIComponent(name), {enabled});
-    banner((enabled ? "Enabled " : "Disabled ") + name, "ok"); loadBackends(); }
+    banner((enabled ? "Allowed " : "Blocked ") + name, "ok"); loadBackends(); }
   catch (e) { banner("Error: " + e.message, "bad"); }
 }
 
