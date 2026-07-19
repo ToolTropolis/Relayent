@@ -31,6 +31,26 @@ func (s *server) statusPage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
+	// On a multi-tenant relay, the root is a human entry point, not a
+	// pairing-key prompt — that prompt asks for a credential OIDC deployments
+	// don't hand out, so an anonymous visitor would see an unfillable form.
+	// Route by session instead: an admin goes to their console, a signed-in
+	// user sees their own status page (the pairing-key legacy view), and anyone
+	// not signed in is sent to /login. Single-key mode (no store) is unchanged.
+	if s.store.Enabled() && s.oidc != nil {
+		p := s.oidc.principalFromSession(r)
+		if p == nil {
+			http.Redirect(w, r, "/login", http.StatusFound)
+			return
+		}
+		if p.Can(ScopeAdmin) {
+			http.Redirect(w, r, "/admin", http.StatusFound)
+			return
+		}
+		// A signed-in non-admin falls through to the status page below — this
+		// is the "/" that /login sends regular users to, so it must render here
+		// rather than redirect, or the two would bounce each other in a loop.
+	}
 	nonce, err := scriptNonce()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "internal error")
