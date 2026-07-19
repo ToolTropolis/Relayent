@@ -885,6 +885,15 @@ async function loadBackends() {
   for (const b of backends) {
     const tr = document.createElement("tr");
     tr.appendChild(cell(b.name));
+    // A stub (unsupported) backend can never run, so its policy toggle is
+    // meaningless — show it as unavailable with no enable/disable control.
+    if (!b.supported) {
+      const pol = cell("—"); pol.className = "muted"; tr.appendChild(pol);
+      const rd = document.createElement("td"); rd.appendChild(pill(false, "unavailable", "unavailable")); tr.appendChild(rd);
+      const gd = cell("Not implemented yet — no adapter. Nothing to enable."); gd.className = "muted"; gd.style.maxWidth = "34ch"; gd.style.whiteSpace = "normal"; tr.appendChild(gd);
+      const act = cell(""); tr.appendChild(act);
+      tb.appendChild(tr); continue;
+    }
     // Policy (the toggle state) — enabled/disabled.
     const pol = document.createElement("td"); pol.appendChild(pill(b.enabled, "enabled", "disabled")); tr.appendChild(pol);
     // Readiness — a separate axis from policy.

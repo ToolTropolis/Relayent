@@ -360,6 +360,12 @@ func (s *server) adminSetBackend(w http.ResponseWriter, r *http.Request, p *Prin
 		writeErr(w, http.StatusNotFound, "unknown backend")
 		return
 	}
+	// A stub backend has no adapter and can never run a job, so its exposure policy
+	// is meaningless — refuse to toggle it rather than let the UI imply it's usable.
+	if !supportedBackends[name] {
+		writeErr(w, http.StatusBadRequest, "backend is not supported (no adapter) and cannot be enabled")
+		return
+	}
 	var req api.SetBackendRequest
 	if !decode(w, r, &req) {
 		return
