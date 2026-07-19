@@ -161,11 +161,11 @@ const demoHTML = `<!doctype html>
       subscription via Relayent — there's no API key behind this.</div>
     </div>
     <div id="suggestions" class="suggestions" aria-label="Suggested prompts">
-      <button type="button" class="chip" data-p="Explain what Relayent is in two sentences.">What is Relayent?</button>
-      <button type="button" class="chip" data-p="Write a haiku about the ocean.">Write a haiku</button>
-      <button type="button" class="chip" data-p="Explain the difference between TCP and UDP simply.">TCP vs UDP</button>
-      <button type="button" class="chip" data-p="Give me a one-paragraph summary of how HTTPS works.">How does HTTPS work?</button>
-      <button type="button" class="chip" data-p="Suggest three names for a coffee shop and say why.">Name a coffee shop</button>
+      <button type="button" class="chip" data-p="Write a Python function that parses an ISO-8601 duration string (e.g. PT1H30M) into total seconds. Handle the common cases and add a couple of assert-based tests.">Write a function</button>
+      <button type="button" class="chip" data-p="This Go code leaks a goroutine; explain why and give the fix:&#10;&#10;func fanIn(a, b &lt;-chan int) &lt;-chan int {&#10;    out := make(chan int)&#10;    go func() { for v := range a { out &lt;- v } }()&#10;    go func() { for v := range b { out &lt;- v } }()&#10;    return out&#10;}">Debug this Go</button>
+      <button type="button" class="chip" data-p="Explain how a bloom filter works, what it trades away, and one real situation where you'd reach for one. Keep it to a short paragraph a backend engineer would appreciate.">Explain a concept</button>
+      <button type="button" class="chip" data-p="Postgres vs SQLite for a single-user desktop app that needs to work offline. Give me the honest trade-offs and a recommendation, not a feature list.">Compare two tools</button>
+      <button type="button" class="chip" data-p="Draft a short, professional Slack message declining a meeting invite because it conflicts with focus time, and proposing to handle it async instead.">Draft a message</button>
     </div>
     <form id="form">
       <textarea id="prompt" rows="1" placeholder="Message…" autocomplete="off"></textarea>
