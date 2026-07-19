@@ -91,12 +91,16 @@ this key is accepted; otherwise any non-empty key gets its own isolated namespac
 
 ## Backends
 
-| Backend | Status | How it runs |
-|---|---|---|
-| `claude` | ✅ | `claude -p --output-format json [--json-schema] [--model]`, prompt on stdin |
-| `codex` | ✅ | `codex exec -`, prompt on stdin |
-| `cursor` | ✅ | `cursor-agent -p --output-format json --mode ask --trust`, prompt as an argument |
-| `gemini` | 🔜 stub | wire the Gemini CLI headless mode |
+| Backend | Status | CLI (official page) | How it runs |
+|---|---|---|---|
+| `claude` | ✅ | [Claude Code](https://claude.com/claude-code) | `claude -p --output-format json [--json-schema] [--model]`, prompt on stdin |
+| `codex` | ✅ | [Codex](https://developers.openai.com/codex) | `codex exec -`, prompt on stdin |
+| `cursor` | ✅ | [Cursor CLI](https://cursor.com/cli) | `cursor-agent -p --output-format json --mode ask --trust`, prompt as an argument |
+| `gemini` | 🔜 stub | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | wire the Gemini CLI headless mode |
+
+Install and sign in to a backend's CLI on the **bridge** machine — see
+[INSTALL.md → Prerequisites](INSTALL.md#prerequisites) for per-CLI commands. A backend appears
+the moment its CLI is installed and logged in; no bridge restart needed.
 
 `cursor` runs in `--mode ask` (read-only Q&A) so a generation job can never edit files or run
 shell commands. `--trust` is required for headless runs. The CLI has no schema flag, so the

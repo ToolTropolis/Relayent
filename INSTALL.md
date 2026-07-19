@@ -138,17 +138,26 @@ your machine and spend your subscription. Treat it like a password throughout.
 
 ## Prerequisites
 
-**On the bridge machine**, at least one AI CLI installed **and signed in**:
+**On the bridge machine**, at least one AI CLI installed **and signed in**. Each backend maps
+to one CLI — install the ones whose subscription you want to use, then sign in. Always follow
+the official page for the current install command and login flow; the commands below are a
+starting point.
 
-```bash
-claude --version          # Claude Code   — https://claude.com/claude-code
-codex --version           # Codex         — https://developers.openai.com/codex
-cursor-agent status       # Cursor        — https://cursor.com/cli
-```
+| Backend | CLI | Install (see official page for the current method) | Official page | Sign in | Verify |
+|---|---|---|---|---|---|
+| `claude` | Claude Code | `npm i -g @anthropic-ai/claude-code` | https://claude.com/claude-code | `claude` (prompts to log in) | `claude --version` |
+| `codex` | Codex CLI | `npm i -g @openai/codex` | https://developers.openai.com/codex | `codex login` | `codex --version` |
+| `cursor` | Cursor CLI | `curl https://cursor.com/install -fsS \| bash` | https://cursor.com/cli | `cursor-agent login` | `cursor-agent status` → `✓ Logged in as <you>` |
+| `gemini` | Gemini CLI | *(not yet supported — adapter is a stub)* | https://github.com/google-gemini/gemini-cli | — | — |
 
-At least one must succeed. For Cursor you should see `✓ Logged in as <you>`. **Signed in
-matters more than installed**: Relayent reuses the CLI's own session and never handles
-credentials, so an installed-but-logged-out CLI cannot run jobs.
+At least one must succeed. **Signed in matters more than installed**: Relayent reuses the CLI's
+own session and never handles credentials, so an installed-but-logged-out CLI cannot run jobs.
+For anything install- or login-related, the **official page is the source of truth** — versions,
+package names, and login flows change.
+
+Install a CLI (or sign in) **after** the bridge is already running and it just works — the bridge
+re-reports its backends on the next poll, and any consumer (the API, the demo dropdown) picks up
+the newly-ready backend on refresh. No bridge restart or redeploy needed.
 
 **To build from source** (recommended): Go 1.22+ (`go version`). On macOS: `brew install go`.
 
