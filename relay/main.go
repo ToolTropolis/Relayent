@@ -216,6 +216,14 @@ func main() {
 	// entry, redirecting by role on success. Multi-tenant only (guarded in-handler).
 	mux.HandleFunc("GET /login", srv.loginPage)
 
+	// A signed-in regular user's own status, scoped to their OIDC session
+	// (no target_user — you only ever see yourself). Backs the user status page.
+	mux.HandleFunc("GET /v1/me", srv.me)
+
+	// The pairing-key global status dashboard, always reachable here for ops who
+	// authenticate with a key. On "/" it is served directly only in single-key mode.
+	mux.HandleFunc("GET /status", srv.classicStatusPage)
+
 	mux.HandleFunc("GET /", srv.statusPage)
 
 	// Explicit timeouts: the default zero-value server has none, leaving it open

@@ -141,6 +141,21 @@ type StatusResponse struct {
 	NetworkReachable bool `json:"network_reachable"`
 }
 
+// MeResponse is returned by GET /v1/me — the signed-in user's own status,
+// scoped entirely to their OIDC session. It carries NO prompt or result
+// content: only their bridge's presence/capabilities and their pending-job
+// count, so a regular user can see whether their own machine is reachable.
+type MeResponse struct {
+	Sub         string `json:"sub"` // the caller's own OIDC subject
+	Email       string `json:"email,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+
+	BridgeOnline bool               `json:"bridge_online"`         // is the user's own bridge polling
+	ReportedAt   string             `json:"reported_at,omitempty"` // RFC3339 of last capabilities report
+	Capabilities BridgeCapabilities `json:"capabilities"`          // the user's bridge: version, host, backends
+	PendingJobs  int                `json:"pending_jobs"`          // queued jobs for this user (count only)
+}
+
 // --- admin surface (/v1/admin/*) ---
 
 // AdminUser is a user as shown on the admin surface, with per-user activity but
