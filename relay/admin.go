@@ -222,7 +222,13 @@ func (s *server) adminAudit(w http.ResponseWriter, r *http.Request, p *Principal
 // secret is set, plus non-secret identifiers (issuer, client id, redirect). The
 // values are env/compose-driven; the UI shows them but cannot change them.
 func (s *server) adminConfig(w http.ResponseWriter, r *http.Request, p *Principal) {
-	hostname, _ := os.Hostname()
+	// Prefer an operator-set label — inside a container os.Hostname() is just the
+	// container ID (a meaningless hash), not the host anyone recognises. Set
+	// RELAYENT_HOST_LABEL to the real host/VPS name for a useful value.
+	hostname := os.Getenv("RELAYENT_HOST_LABEL")
+	if hostname == "" {
+		hostname, _ = os.Hostname()
+	}
 	cfg := api.AdminConfig{
 		Version:       Version,
 		Hostname:      hostname,
