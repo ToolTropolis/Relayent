@@ -1,0 +1,33 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Relayent">
+  <title>Relayent</title>
+  <defs>
+    <linearGradient id="rl-bg" x1="96" y1="72" x2="416" y2="440" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#818cf8"/>
+      <stop offset="0.55" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#4f46e5"/>
+    </linearGradient>
+    <linearGradient id="rl-path" x1="150" y1="330" x2="362" y2="182" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.95"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded-square container in the Relayent indigo identity -->
+  <rect x="48" y="48" width="416" height="416" rx="104" fill="url(#rl-bg)"/>
+  <rect x="48.5" y="48.5" width="415" height="415" rx="103.5" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="1"/>
+
+  <!-- Relay hops: a job routed app -> relay -> bridge. The path steps up (a "hop"),
+       the middle node (the relay) is the hero, haloed; the flanking nodes are the
+       app and the bridge. -->
+  <path d="M150 330 L256 214 L362 182" fill="none" stroke="url(#rl-path)"
+        stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- app node (left, small) -->
+  <circle cx="150" cy="330" r="30" fill="#ffffff" fill-opacity="0.92"/>
+  <!-- bridge node (right, small) -->
+  <circle cx="362" cy="182" r="30" fill="#ffffff" fill-opacity="0.92"/>
+  <!-- relay node (center, hero) with a soft halo -->
+  <circle cx="256" cy="214" r="66" fill="#ffffff" fill-opacity="0.14"/>
+  <circle cx="256" cy="214" r="46" fill="#ffffff"/>
+  <circle cx="256" cy="214" r="21" fill="#4f46e5"/>
+</svg>
