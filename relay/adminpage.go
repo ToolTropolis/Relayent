@@ -449,7 +449,7 @@ const adminHTML = `<!doctype html>
     <section id="view-backends" class="view">
       <div class="head"><h1>Backends</h1><p>Control which AI backends this relay exposes. A disabled backend is hidden from apps and refused at enqueue — use it to keep a public surface off paid subscriptions.</p></div>
       <div class="card">
-        <h2>Backends</h2>
+        <h2>Backends <span class="note muted" id="backends-fresh"></span></h2>
         <div class="tablewrap"><table>
           <thead><tr><th>Backend</th><th>Policy</th><th>Readiness</th><th>What to do</th><th></th></tr></thead>
           <tbody id="backends"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
@@ -865,10 +865,22 @@ function backendReadiness(b) {
     return { ok:false, label:"Installed, not ready", hint:"The CLI is present but not usable. Check it runs and is signed in on the bridge." };
   return { ok:false, label:"Not installed", hint:"No reporting bridge has this CLI. Install it, then sign in — it appears on the next poll." };
 }
+// timeAgo renders a short "Ns ago" / "Nm ago" for a timestamp.
+function timeAgo(iso) {
+  if (!iso) return "";
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return s + "s ago";
+  if (s < 3600) return Math.round(s/60) + "m ago";
+  return Math.round(s/3600) + "h ago";
+}
 async function loadBackends() {
   const data = await api("GET", "/v1/admin/backends");
   const tb = $("backends"); tb.replaceChildren();
   const backends = (data && data.backends) || [];
+  // Freshness: readiness reflects the last bridge report, so show how old it is.
+  $("backends-fresh").textContent = data && data.reported_at
+    ? "— readiness reported " + timeAgo(data.reported_at)
+    : "— no bridge has reported yet";
   if (!backends.length) { emptyRow(tb, 5, "No backends."); return; }
   for (const b of backends) {
     const tr = document.createElement("tr");
@@ -905,7 +917,10 @@ async function loadApps() {
     tr.appendChild(cell((c.scopes || []).join(", ")));
     const st = document.createElement("td"); st.appendChild(pill(!c.revoked, "active", "revoked")); tr.appendChild(st);
     const act = document.createElement("td"); const wrap=document.createElement("div"); wrap.className="actions";
+    // Active -> Revoke (disable, keep record). Revoked -> Delete (remove the row).
+    // No un-revoke by design: issue a new credential to restore access.
     if (!c.revoked) wrap.appendChild(btn("Revoke", "ghost sm", () => revokeApp(c.id)));
+    else wrap.appendChild(btn("Delete", "danger sm", () => deleteApp(c.id, c.app_id)));
     act.appendChild(wrap); tr.appendChild(act); tb.appendChild(tr);
   }
 }
@@ -936,6 +951,12 @@ async function deleteUser(sub, label) {
 async function revokeApp(id) {
   try { await api("POST", "/v1/admin/app-creds/" + encodeURIComponent(id) + "/revoke");
     banner("Revoked credential", "ok"); loadApps(); }
+  catch (e) { banner("Error: " + e.message, "bad"); }
+}
+async function deleteApp(id, appId) {
+  if (!confirm("Delete the revoked credential for " + appId + "? This removes the record permanently.")) return;
+  try { await api("DELETE", "/v1/admin/app-creds/" + encodeURIComponent(id));
+    banner("Deleted credential", "ok"); loadApps(); }
   catch (e) { banner("Error: " + e.message, "bad"); }
 }
 

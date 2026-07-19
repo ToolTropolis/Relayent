@@ -305,11 +305,15 @@ func (s *server) adminListBackends(w http.ResponseWriter, r *http.Request, p *Pr
 	for _, name := range knownBackendList {
 		agg[name] = &rollup{}
 	}
+	var latest time.Time // most-recent bridge report, so the UI can show freshness
 	if users, err := s.store.ListUsers(); err == nil {
 		for _, u := range users {
 			caps, reportedAt, _ := s.q.Capabilities(u.Sub)
 			if reportedAt.IsZero() {
 				continue // this user's bridge hasn't reported
+			}
+			if reportedAt.After(latest) {
+				latest = reportedAt
 			}
 			for _, b := range caps.Backends {
 				r := agg[b.Name]
@@ -342,7 +346,11 @@ func (s *server) adminListBackends(w http.ResponseWriter, r *http.Request, p *Pr
 			ReadyBridges:     r.ready,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"backends": out})
+	resp := map[string]any{"backends": out}
+	if !latest.IsZero() {
+		resp["reported_at"] = latest.UTC().Format(time.RFC3339) // freshest bridge report
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // adminSetBackend enables or disables one backend globally. Body: {"enabled":bool}.
@@ -371,4 +379,16 @@ func (s *server) adminRevokeAppCred(w http.ResponseWriter, r *http.Request, p *P
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": "revoked"})
+}
+
+// adminDeleteAppCred removes an app credential record entirely (for tidying a
+// revoked or unused one). There is no un-revoke by design — a retired secret is
+// never resurrected; issue a new credential to restore access.
+func (s *server) adminDeleteAppCred(w http.ResponseWriter, r *http.Request, p *Principal) {
+	id := r.PathValue("id")
+	if err := s.store.DeleteAppCred(id); err != nil {
+		writeErr(w, http.StatusNotFound, "unknown credential")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"id": id, "status": "deleted"})
 }

@@ -147,7 +147,9 @@ type bridge struct {
 // run is the poll loop: claim a job, process it, repeat, until ctx is cancelled.
 func (b *bridge) run(ctx context.Context) {
 	backoff := time.Second
-	pollFailed := false // true after a poll error, so recovery can re-report caps
+	pollFailed := false                // true after a poll error, so recovery can re-report caps
+	var lastCaps time.Time             // when caps were last reported from this loop
+	const capsEvery = 15 * time.Second // keep the relay's readiness fresh to ~this
 	for {
 		if ctx.Err() != nil {
 			return
@@ -165,12 +167,15 @@ func (b *bridge) run(ctx context.Context) {
 			continue
 		}
 		backoff = time.Second
-		// On recovery from a poll failure (typically a relay restart, which loses
-		// the in-memory capabilities), re-report immediately so the admin view shows
-		// host/backends within a poll instead of waiting for the ~60s caps ticker.
-		if pollFailed {
+		// Keep readiness current: re-scan and report on recovery from a poll failure
+		// (a relay restart loses in-memory caps), and otherwise at most every
+		// capsEvery so a newly installed/removed CLI surfaces within a poll cycle
+		// rather than waiting on the slow fallback ticker. Describe() re-detects the
+		// CLIs each call, so this is always a fresh scan, not a cached one.
+		if pollFailed || time.Since(lastCaps) >= capsEvery {
 			pollFailed = false
 			b.reportCapabilities(ctx)
+			lastCaps = time.Now()
 		}
 		if !ok {
 			continue // 204: no job within the wait window; poll again

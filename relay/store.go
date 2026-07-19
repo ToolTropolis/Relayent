@@ -519,6 +519,23 @@ func (s *Store) RevokeAppCred(id string) error {
 	})
 }
 
+// DeleteAppCred removes an app credential record entirely. Intended for tidying a
+// credential you have already revoked (or an unused one). There is deliberately no
+// "un-revoke": a retired secret must never be resurrected — issue a new credential
+// instead.
+func (s *Store) DeleteAppCred(id string) error {
+	if !s.Enabled() {
+		return nil
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket(bktAppCreds)
+		if bkt.Get([]byte(id)) == nil {
+			return ErrNotFound
+		}
+		return bkt.Delete([]byte(id))
+	})
+}
+
 // --- enrollment tokens ---
 
 // PutEnrollToken stores a one-time token under tokenHash (sha256 of the token).

@@ -265,6 +265,19 @@ paths:
         "200": { description: Revoked }
         "403": { description: Not an admin }
         "404": { description: Unknown credential }
+  /v1/admin/app-creds/{id}:
+    delete:
+      summary: Delete an app credential record (admin)
+      description: |
+        Removes the record entirely — for tidying a revoked or unused credential.
+        There is no un-revoke by design: a retired secret is never resurrected;
+        issue a new credential to restore access.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Deleted }
+        "403": { description: Not an admin }
+        "404": { description: Unknown credential }
   /v1/admin/users/{sub}/bridges:
     get:
       summary: List a user's enrolled bridges — one per binding, no secrets (admin)

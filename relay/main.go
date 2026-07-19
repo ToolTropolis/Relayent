@@ -199,6 +199,7 @@ func main() {
 	mux.HandleFunc("GET /v1/admin/app-creds", srv.authorize(ScopeAdmin, srv.adminListAppCreds))
 	mux.HandleFunc("POST /v1/admin/app-creds", srv.authorize(ScopeAdmin, srv.adminCreateAppCred))
 	mux.HandleFunc("POST /v1/admin/app-creds/{id}/revoke", srv.authorize(ScopeAdmin, srv.adminRevokeAppCred))
+	mux.HandleFunc("DELETE /v1/admin/app-creds/{id}", srv.authorize(ScopeAdmin, srv.adminDeleteAppCred))
 	mux.HandleFunc("GET /v1/admin/audit", srv.authorize(ScopeAdmin, srv.adminAudit))
 	mux.HandleFunc("GET /v1/admin/config", srv.authorize(ScopeAdmin, srv.adminConfig))
 	mux.HandleFunc("GET /v1/admin/users/{sub}/bridges", srv.authorize(ScopeAdmin, srv.adminListUserBridges))
