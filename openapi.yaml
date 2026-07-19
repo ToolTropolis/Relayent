@@ -265,6 +265,46 @@ paths:
         "200": { description: Revoked }
         "403": { description: Not an admin }
         "404": { description: Unknown credential }
+  /v1/admin/backends:
+    get:
+      summary: List backends and whether each is enabled (admin)
+      description: |
+        The global exposure policy. A disabled backend is hidden from
+        /v1/bridge/capabilities and refused at POST /v1/jobs (403), for every
+        caller — use it to keep a public surface off paid subscriptions.
+      responses:
+        "200":
+          description: Backends with enabled state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  backends:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminBackend" }
+        "403": { description: Not an admin }
+  /v1/admin/backends/{name}:
+    post:
+      summary: Enable or disable one backend globally (admin)
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string, enum: [claude, codex, gemini, cursor] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetBackendRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminBackend" }
+        "403": { description: Not an admin }
+        "404": { description: Unknown backend }
   /v1/admin/config:
     get:
       summary: Read-only snapshot of the relay's effective config — NO secrets (admin)
@@ -610,6 +650,16 @@ components:
       required: [role]
       properties:
         role: { type: string, enum: [admin, user] }
+    AdminBackend:
+      type: object
+      properties:
+        name: { type: string, enum: [claude, codex, gemini, cursor] }
+        enabled: { type: boolean }
+    SetBackendRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
     AdminConfig:
       type: object
       description: Effective relay config — NO secret values, only whether each is set.

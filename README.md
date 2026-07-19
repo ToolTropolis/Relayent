@@ -294,6 +294,7 @@ protect against](SECURITY.md#what-relayent-does-not-protect-against).
 | **[INSTALL.md](INSTALL.md)** | Setup, start to finish: bridge, relay (localhost / private / public+TLS), verification, configuration, rotation, troubleshooting |
 | **[SECURITY.md](SECURITY.md)** | Threat model, the deploy guide, and **what Relayent does not protect against** |
 | **[AGENTS.md](AGENTS.md)** | Conventions and security invariants for AI agents working on this codebase |
+| **[demo/](demo/)** | A public chat playground backed by the relay — model dropdown from the API, one message = one job |
 | **[openapi.yaml](openapi.yaml)** | The `/v1` contract — the only integration surface |
 
 ## License

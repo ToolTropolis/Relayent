@@ -306,10 +306,18 @@ as a bearer). None of these ever return prompt or result content.
 | `POST` | `/v1/admin/app-creds/{id}/revoke` | Revoke an app credential |
 | `GET` | `/v1/admin/audit` | Recent activity — who/when/backend/status/bytes, no content |
 | `GET` | `/v1/admin/config` | Effective relay config — no secret values |
+| `GET` | `/v1/admin/backends` | List backends and whether each is enabled |
+| `POST` | `/v1/admin/backends/{name}` | Enable/disable a backend — `{"enabled":true\|false}` |
 
 An admin cannot demote or delete **themselves** (last-admin lockout guard). `GET /v1/admin/config`
 returns only non-secret values plus booleans for whether the pairing key / admin token are set;
 config itself is env/compose-driven (change `.env`, then `docker compose up -d`).
+
+**Backend exposure policy.** An admin can disable a backend globally. A disabled backend is
+**omitted** from `GET /v1/bridge/capabilities` and **refused** at `POST /v1/jobs` with `403`, for
+every caller — so an integrating app should treat "not present in capabilities" as "not available",
+and be ready for a `403` if it enqueues a backend that was disabled after discovery. This is how a
+public surface (e.g. the demo) is kept to a safe subset like `cursor` only.
 
 Bridges obtain their own credential by redeeming an enrollment token at **`POST /v1/enroll`** — see
 [INSTALL.md](INSTALL.md#multi-user-multi-tenant-mode). Full request/response detail for every
