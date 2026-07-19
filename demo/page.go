@@ -173,7 +173,7 @@ const demoHTML = `<!doctype html>
     </form>
   </main>
   <footer>
-    <span class="tagline">Powered by <a href="https://github.com/ToolTropolis/Relayent" target="_blank" rel="noopener noreferrer">Relayent</a> — your subscription, from anywhere.</span>
+    <span class="tagline">Powered by <a href="https://github.com/ToolTropolis/Relayent" target="_blank" rel="noopener noreferrer">Relayent</a> — your subscription, from anywhere. · Built by Navjyot's Lab</span>
     <nav aria-label="Project links">
       <a href="https://github.com/ToolTropolis/Relayent" target="_blank" rel="noopener noreferrer">GitHub</a>
       <span class="sep">·</span>
