@@ -147,8 +147,16 @@ const adminHTML = `<!doctype html>
   .brand span { color:var(--faint); font-size:.7rem; letter-spacing:.02em;
     text-transform:uppercase; }
   nav { padding:.6rem .7rem; overflow-y:auto; flex:1; }
-  .navgroup { color:var(--faint); font-size:.66rem; text-transform:uppercase;
-    letter-spacing:.11em; font-weight:700; padding:1rem .7rem .3rem; }
+  /* Collapsible group header (a button now). */
+  .navgroup { display:flex; align-items:center; gap:.4rem; width:100%; text-align:left;
+    background:none; border:0; cursor:pointer; color:var(--faint); font:inherit;
+    font-size:.66rem; text-transform:uppercase; letter-spacing:.11em; font-weight:700;
+    padding:1rem .7rem .3rem; }
+  .navgroup:hover { color:var(--muted); }
+  .navgroup .gcaret { font-size:.6rem; transition:transform .15s ease; display:inline-block; }
+  .navgroup[aria-expanded="false"] .gcaret { transform:rotate(-90deg); }
+  .navgroup-items { overflow:hidden; }
+  .navgroup-items[hidden] { display:none; }
   .navlink { display:flex; align-items:center; gap:.65rem; width:100%; text-align:left;
     background:none; border:0; color:var(--fg-dim); font:inherit; font-size:.92rem; cursor:pointer;
     padding:.5rem .7rem; border-radius:8px; margin-bottom:1px; position:relative;
@@ -359,28 +367,36 @@ const adminHTML = `<!doctype html>
       <div><b>Relayent</b><br><span>Admin console</span></div>
     </div>
     <nav>
-      <div class="navgroup">Admin</div>
-      <button class="navlink" data-view="users"><span class="ic">◱</span> Users</button>
-      <button class="navlink" data-view="audit"><span class="ic">≣</span> Audit</button>
-      <div class="navgroup">Configure</div>
-      <button class="navlink" data-view="status"><span class="ic">◈</span> Relay &amp; bridges</button>
-      <button class="navlink" data-view="enroll"><span class="ic">＋</span> Enrol a bridge</button>
-      <button class="navlink" data-view="backends"><span class="ic">◧</span> Backends</button>
-      <button class="navlink" data-view="settings"><span class="ic">⚙</span> Settings</button>
-      <div class="navgroup">Integration</div>
-      <button class="navlink" data-view="creds"><span class="ic">⚿</span> App credentials</button>
-      <div class="navgroup">Help</div>
-      <button class="navlink" id="guide-toggle" data-view="help" aria-expanded="false">
-        <span class="ic tw" id="guide-caret">▸</span> Guide</button>
-      <div class="subnav" id="guide-sub" hidden>
-        <button class="subnavlink" data-topic="overview">Overview</button>
-        <button class="subnavlink" data-topic="users">Users</button>
-        <button class="subnavlink" data-topic="audit">Audit</button>
-        <button class="subnavlink" data-topic="status">Relay &amp; bridges</button>
-        <button class="subnavlink" data-topic="enroll">Enrol a bridge</button>
-        <button class="subnavlink" data-topic="settings">Settings</button>
-        <button class="subnavlink" data-topic="creds">App credentials</button>
-        <button class="subnavlink" data-topic="signin">Sign-in &amp; landing</button>
+      <button class="navgroup" data-group="admin" aria-expanded="true"><span class="gcaret">▾</span> Admin</button>
+      <div class="navgroup-items" data-group-items="admin">
+        <button class="navlink" data-view="users"><span class="ic">◱</span> Users</button>
+        <button class="navlink" data-view="audit"><span class="ic">≣</span> Audit</button>
+      </div>
+      <button class="navgroup" data-group="configure" aria-expanded="true"><span class="gcaret">▾</span> Configure</button>
+      <div class="navgroup-items" data-group-items="configure">
+        <button class="navlink" data-view="status"><span class="ic">◈</span> Relay &amp; bridges</button>
+        <button class="navlink" data-view="enroll"><span class="ic">＋</span> Enrol a bridge</button>
+        <button class="navlink" data-view="backends"><span class="ic">◧</span> Backends</button>
+        <button class="navlink" data-view="settings"><span class="ic">⚙</span> Settings</button>
+      </div>
+      <button class="navgroup" data-group="integration" aria-expanded="true"><span class="gcaret">▾</span> Integration</button>
+      <div class="navgroup-items" data-group-items="integration">
+        <button class="navlink" data-view="creds"><span class="ic">⚿</span> App credentials</button>
+      </div>
+      <button class="navgroup" data-group="help" aria-expanded="true"><span class="gcaret">▾</span> Help</button>
+      <div class="navgroup-items" data-group-items="help">
+        <button class="navlink" id="guide-toggle" data-view="help" aria-expanded="false">
+          <span class="ic tw" id="guide-caret">▸</span> Guide</button>
+        <div class="subnav" id="guide-sub" hidden>
+          <button class="subnavlink" data-topic="overview">Overview</button>
+          <button class="subnavlink" data-topic="users">Users</button>
+          <button class="subnavlink" data-topic="audit">Audit</button>
+          <button class="subnavlink" data-topic="status">Relay &amp; bridges</button>
+          <button class="subnavlink" data-topic="enroll">Enrol a bridge</button>
+          <button class="subnavlink" data-topic="settings">Settings</button>
+          <button class="subnavlink" data-topic="creds">App credentials</button>
+          <button class="subnavlink" data-topic="signin">Sign-in &amp; landing</button>
+        </div>
       </div>
     </nav>
     <div class="whoami">
@@ -1072,6 +1088,24 @@ $("addapp").onclick = async () => {
 };
 for (const b of document.querySelectorAll(".navlink"))
   b.onclick = () => go(b.dataset.view);
+
+/* Collapsible sidebar groups: each header folds/unfolds its items; the state is
+   remembered per group in localStorage so it sticks across reloads. */
+function setGroup(name, open) {
+  const hdr = document.querySelector('.navgroup[data-group="' + name + '"]');
+  const items = document.querySelector('.navgroup-items[data-group-items="' + name + '"]');
+  if (!hdr || !items) return;
+  items.hidden = !open;
+  hdr.setAttribute("aria-expanded", open ? "true" : "false");
+  try { localStorage.setItem("nav.grp." + name, open ? "1" : "0"); } catch (e) {}
+}
+for (const hdr of document.querySelectorAll(".navgroup")) {
+  const name = hdr.dataset.group;
+  let open = true;
+  try { const v = localStorage.getItem("nav.grp." + name); if (v !== null) open = v === "1"; } catch (e) {}
+  setGroup(name, open);
+  hdr.addEventListener("click", () => setGroup(name, hdr.getAttribute("aria-expanded") !== "true"));
+}
 
 /* Guide is a collapsible tree: the parent toggles the sub-tree AND opens the
    Guide view; each child opens the Guide and scrolls to that topic's card. */
