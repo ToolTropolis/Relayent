@@ -334,6 +334,10 @@ var knownBackends = map[string]bool{
 	"claude": true, "codex": true, "gemini": true, "cursor": true,
 }
 
+// knownBackendList is the same set in a stable display order, for the admin
+// backend-policy UI/API (a map has no order).
+var knownBackendList = []string{"claude", "codex", "gemini", "cursor"}
+
 // sanitizeCapabilities filters a bridge's self-report down to values the relay is
 // willing to serve back. Capabilities are attacker-controllable — anyone with a
 // valid pairing key can POST them — and they are later rendered on the status

@@ -201,6 +201,8 @@ func main() {
 	mux.HandleFunc("POST /v1/admin/app-creds/{id}/revoke", srv.authorize(ScopeAdmin, srv.adminRevokeAppCred))
 	mux.HandleFunc("GET /v1/admin/audit", srv.authorize(ScopeAdmin, srv.adminAudit))
 	mux.HandleFunc("GET /v1/admin/config", srv.authorize(ScopeAdmin, srv.adminConfig))
+	mux.HandleFunc("GET /v1/admin/backends", srv.authorize(ScopeAdmin, srv.adminListBackends))
+	mux.HandleFunc("POST /v1/admin/backends/{name}", srv.authorize(ScopeAdmin, srv.adminSetBackend))
 
 	// The admin dashboard (multi-tenant only). The page itself is public HTML —
 	// it authenticates its /v1/admin/* XHRs via the OIDC session cookie or a
@@ -476,6 +478,13 @@ func (s *server) enqueue(w http.ResponseWriter, r *http.Request, p *Principal) {
 		return
 	}
 
+	// Enforce the global backend policy at enqueue, not just in the UI: a disabled
+	// backend is refused for everyone, so a direct API caller can't bypass it.
+	if disabled, _ := s.store.DisabledBackends(); disabled[strings.ToLower(strings.TrimSpace(req.Backend))] {
+		writeErr(w, http.StatusForbidden, "backend is disabled on this relay")
+		return
+	}
+
 	// Resolve which user's bridge this job routes to.
 	target, err := s.routeTarget(p, req.TargetUser)
 	if err != nil {
@@ -709,14 +718,45 @@ func (s *server) status(w http.ResponseWriter, r *http.Request, p *Principal) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// getCapabilities returns what the bridge last reported it supports.
+// getCapabilities returns what the bridge last reported it supports, minus any
+// backend an admin has disabled globally. An app credential names the target user
+// (?target_user=) as with the other read endpoints; a self-routing principal sees
+// its own. Disabled backends are omitted entirely so a consumer (e.g. the demo's
+// model dropdown) only ever sees what it is allowed to use.
 func (s *server) getCapabilities(w http.ResponseWriter, r *http.Request, p *Principal) {
-	caps, reportedAt, online := s.q.Capabilities(p.UserID)
+	target, err := s.resolveReadTarget(p, r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	caps, reportedAt, online := s.q.Capabilities(target)
+	caps.Backends = s.filterDisabledBackends(caps.Backends)
 	resp := api.CapabilitiesResponse{Online: online, Capabilities: caps}
 	if !reportedAt.IsZero() {
 		resp.ReportedAt = reportedAt.UTC().Format(time.RFC3339)
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// filterDisabledBackends drops backends an admin has switched off. In legacy mode
+// (no store) there is no policy, so the list passes through. A store read error
+// returns the list unchanged rather than hiding everything — enqueue independently
+// enforces the policy, so a stale read here cannot let a disabled backend run.
+func (s *server) filterDisabledBackends(in []api.BackendInfo) []api.BackendInfo {
+	if !s.store.Enabled() {
+		return in
+	}
+	disabled, err := s.store.DisabledBackends()
+	if err != nil || len(disabled) == 0 {
+		return in
+	}
+	out := in[:0:0]
+	for _, b := range in {
+		if !disabled[b.Name] {
+			out = append(out, b)
+		}
+	}
+	return out
 }
 
 // postCapabilities lets a bridge register what backends it has available. The relay

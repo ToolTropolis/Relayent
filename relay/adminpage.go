@@ -341,6 +341,7 @@ const adminHTML = `<!doctype html>
       <div class="navgroup">Configure</div>
       <button class="navlink" data-view="status"><span class="ic">◈</span> Relay &amp; bridges</button>
       <button class="navlink" data-view="enroll"><span class="ic">＋</span> Enrol a bridge</button>
+      <button class="navlink" data-view="backends"><span class="ic">◧</span> Backends</button>
       <button class="navlink" data-view="settings"><span class="ic">⚙</span> Settings</button>
       <div class="navgroup">Integration</div>
       <button class="navlink" data-view="creds"><span class="ic">⚿</span> App credentials</button>
@@ -437,6 +438,19 @@ const adminHTML = `<!doctype html>
           <button id="mint">Mint token</button>
         </div>
         <p class="hint">The token is shown once, here, and never recoverable. It expires in 15 minutes by default.</p>
+      </div>
+    </section>
+
+    <!-- BACKENDS -->
+    <section id="view-backends" class="view">
+      <div class="head"><h1>Backends</h1><p>Control which AI backends this relay exposes. A disabled backend is hidden from apps and refused at enqueue — use it to keep a public surface off paid subscriptions.</p></div>
+      <div class="card">
+        <h2>Exposure policy</h2>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Backend</th><th>Status</th><th></th></tr></thead>
+          <tbody id="backends"><tr><td colspan="3" class="muted">Loading…</td></tr></tbody>
+        </table></div>
+        <p class="hint">Enabled backends still only run when a user's bridge actually has that CLI installed and ready — this policy narrows what's offered, it doesn't add capability.</p>
       </div>
     </section>
 
@@ -633,7 +647,7 @@ async function api(method, path, body) {
 function showApp() { $("shell").style.display = "grid"; }
 
 /* ---- view router ---- */
-const VIEWS = ["users","audit","status","enroll","settings","creds","help"];
+const VIEWS = ["users","audit","status","enroll","backends","settings","creds","help"];
 function go(view) {
   if (!VIEWS.includes(view)) view = "users";
   for (const v of VIEWS) $("view-" + v).classList.toggle("active", v === view);
@@ -650,6 +664,7 @@ async function loadView(view) {
     if (view === "audit")    await loadAudit();
     if (view === "status")   await loadStatus();
     if (view === "enroll")   await loadEnrollUsers();
+    if (view === "backends") await loadBackends();
     if (view === "settings") await loadConfig();
     if (view === "creds")    await loadApps();
   } catch (e) { if (e.message !== "unauthorized") banner("Error: " + e.message, "bad"); }
@@ -798,6 +813,27 @@ async function loadConfig() {
     ["Legacy pairing key", yesno(c.pairing_key_set)],
     ["Bootstrap admin token", yesno(c.admin_token_set)],
   ]);
+}
+
+/* ---- BACKENDS ---- */
+async function loadBackends() {
+  const data = await api("GET", "/v1/admin/backends");
+  const tb = $("backends"); tb.replaceChildren();
+  const backends = (data && data.backends) || [];
+  if (!backends.length) { emptyRow(tb, 3, "No backends."); return; }
+  for (const b of backends) {
+    const tr = document.createElement("tr");
+    tr.appendChild(cell(b.name));
+    const st = document.createElement("td"); st.appendChild(pill(b.enabled, "enabled", "disabled")); tr.appendChild(st);
+    const act = document.createElement("td"); const wrap = document.createElement("div"); wrap.className = "actions";
+    wrap.appendChild(btn(b.enabled ? "Disable" : "Enable", "ghost sm", () => setBackend(b.name, !b.enabled)));
+    act.appendChild(wrap); tr.appendChild(act); tb.appendChild(tr);
+  }
+}
+async function setBackend(name, enabled) {
+  try { await api("POST", "/v1/admin/backends/" + encodeURIComponent(name), {enabled});
+    banner((enabled ? "Enabled " : "Disabled ") + name, "ok"); loadBackends(); }
+  catch (e) { banner("Error: " + e.message, "bad"); }
 }
 
 /* ---- CREDENTIALS ---- */

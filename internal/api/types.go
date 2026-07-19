@@ -170,6 +170,18 @@ type SetUserRoleRequest struct {
 	Role string `json:"role"` // "admin" | "user"
 }
 
+// AdminBackend is one backend and whether it is enabled (exposed to apps/demo and
+// accepted at enqueue). Disabling is the global exposure control.
+type AdminBackend struct {
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+}
+
+// SetBackendRequest enables or disables one backend globally.
+type SetBackendRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
 // EnrollTokenRequest asks the relay to mint a one-time enrollment token for a
 // user, which the admin sends to that user out-of-band.
 type EnrollTokenRequest struct {

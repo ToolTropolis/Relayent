@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -49,8 +50,14 @@ var (
 	bktEnroll   = []byte("enroll_tokens")   // sha256(token)-> EnrollToken (JSON)
 	bktBindings = []byte("bridge_bindings") // bridge_id    -> BridgeBinding (JSON)
 	bktAudit    = []byte("audit")           // seq (uint64) -> AuditEvent (JSON)
-	allBuckets  = [][]byte{bktUsers, bktAppCreds, bktEnroll, bktBindings, bktAudit}
+	bktSettings = []byte("settings")        // key          -> value (JSON) — global config
+	allBuckets  = [][]byte{bktUsers, bktAppCreds, bktEnroll, bktBindings, bktAudit, bktSettings}
 )
+
+// settingDisabledBackends is the settings key holding the set of backend names an
+// admin has switched OFF. A backend NOT in this set is enabled — so a fresh store
+// exposes whatever bridges report, and disabling is an explicit, auditable action.
+const settingDisabledBackends = "disabled_backends"
 
 // Store is the relay's durable control plane. All content (prompts, results) is
 // deliberately excluded. A nil *Store is valid and means "legacy mode, no
@@ -281,6 +288,72 @@ func (s *Store) DeleteUser(sub string) error {
 			return ErrNotFound
 		}
 		return b.Delete([]byte(sub))
+	})
+}
+
+// --- backend policy (global) ---
+//
+// The relay stores the set of backend names an admin has DISABLED. A name absent
+// from the set is enabled, so an empty/legacy store exposes whatever bridges
+// report — disabling is always the explicit action. This gates what apps and the
+// demo can reach (e.g. keep a public demo on `cursor` only, off paid subscriptions).
+
+// DisabledBackends returns the set of disabled backend names (may be empty).
+func (s *Store) DisabledBackends() (map[string]bool, error) {
+	out := map[string]bool{}
+	if !s.Enabled() {
+		return out, nil
+	}
+	err := s.db.View(func(tx *bolt.Tx) error {
+		v := tx.Bucket(bktSettings).Get([]byte(settingDisabledBackends))
+		if v == nil {
+			return nil
+		}
+		var names []string
+		if err := json.Unmarshal(v, &names); err != nil {
+			return err
+		}
+		for _, n := range names {
+			out[n] = true
+		}
+		return nil
+	})
+	return out, err
+}
+
+// SetBackendEnabled flips one backend on or off, persisting the disabled set.
+// nil store is a no-op (legacy mode has no admin to call this).
+func (s *Store) SetBackendEnabled(name string, enabled bool) error {
+	if !s.Enabled() {
+		return nil
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("backend name is required")
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(bktSettings)
+		set := map[string]bool{}
+		if v := b.Get([]byte(settingDisabledBackends)); v != nil {
+			var names []string
+			if err := json.Unmarshal(v, &names); err != nil {
+				return err
+			}
+			for _, n := range names {
+				set[n] = true
+			}
+		}
+		if enabled {
+			delete(set, name)
+		} else {
+			set[name] = true
+		}
+		names := make([]string, 0, len(set))
+		for n := range set {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		return b.Put([]byte(settingDisabledBackends), mustJSON(names))
 	})
 }
 

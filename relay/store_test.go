@@ -68,6 +68,32 @@ func TestDeleteUser(t *testing.T) {
 	}
 }
 
+// Backend policy: empty = all enabled; disabling adds to the set; enabling removes.
+func TestBackendPolicy(t *testing.T) {
+	s := openTestStore(t)
+	if d, err := s.DisabledBackends(); err != nil || len(d) != 0 {
+		t.Fatalf("fresh store should disable nothing, got (%v,%v)", d, err)
+	}
+	if err := s.SetBackendEnabled("claude", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetBackendEnabled("codex", false); err != nil {
+		t.Fatal(err)
+	}
+	d, _ := s.DisabledBackends()
+	if !d["claude"] || !d["codex"] || d["cursor"] {
+		t.Fatalf("expected claude+codex disabled, cursor enabled; got %v", d)
+	}
+	// Re-enabling removes it; idempotent.
+	if err := s.SetBackendEnabled("claude", true); err != nil {
+		t.Fatal(err)
+	}
+	d, _ = s.DisabledBackends()
+	if d["claude"] || !d["codex"] {
+		t.Fatalf("claude should be back on, codex still off; got %v", d)
+	}
+}
+
 // A nil store must be a total no-op — this is legacy single-key mode, and every
 // call site relies on it so the pre-existing deployment needs no DB.
 func TestNilStoreIsSafeNoop(t *testing.T) {

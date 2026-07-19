@@ -234,6 +234,41 @@ func (s *server) adminConfig(w http.ResponseWriter, r *http.Request, p *Principa
 	writeJSON(w, http.StatusOK, cfg)
 }
 
+// adminListBackends reports every known backend and whether it is enabled. This
+// is the global exposure policy — a disabled backend is hidden from apps and the
+// demo and refused at enqueue, so a public demo can be kept to (say) cursor only,
+// off the operator's paid subscriptions.
+func (s *server) adminListBackends(w http.ResponseWriter, r *http.Request, p *Principal) {
+	disabled, err := s.store.DisabledBackends()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not read backend policy")
+		return
+	}
+	out := make([]api.AdminBackend, 0, len(knownBackendList))
+	for _, name := range knownBackendList {
+		out = append(out, api.AdminBackend{Name: name, Enabled: !disabled[name]})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"backends": out})
+}
+
+// adminSetBackend enables or disables one backend globally. Body: {"enabled":bool}.
+func (s *server) adminSetBackend(w http.ResponseWriter, r *http.Request, p *Principal) {
+	name := strings.ToLower(strings.TrimSpace(r.PathValue("name")))
+	if !knownBackends[name] {
+		writeErr(w, http.StatusNotFound, "unknown backend")
+		return
+	}
+	var req api.SetBackendRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	if err := s.store.SetBackendEnabled(name, req.Enabled); err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not update backend policy")
+		return
+	}
+	writeJSON(w, http.StatusOK, api.AdminBackend{Name: name, Enabled: req.Enabled})
+}
+
 // adminRevokeAppCred revokes an app credential by its public id.
 func (s *server) adminRevokeAppCred(w http.ResponseWriter, r *http.Request, p *Principal) {
 	id := r.PathValue("id")
