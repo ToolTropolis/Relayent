@@ -185,11 +185,23 @@ type AdminBridge struct {
 	LastSeen   string `json:"last_seen"`   // RFC3339
 }
 
-// AdminBackend is one backend and whether it is enabled (exposed to apps/demo and
-// accepted at enqueue). Disabling is the global exposure control.
+// AdminBackend is one backend: its global exposure policy (Enabled) plus a rollup
+// of what bridges actually report for it. Policy and readiness are different
+// things — Enabled is the admin allowing it; the readiness fields say whether any
+// bridge can actually run it. Supported=false means the adapter is a stub (e.g.
+// gemini) and it can never run regardless of policy.
 type AdminBackend struct {
 	Name    string `json:"name"`
 	Enabled bool   `json:"enabled"`
+
+	// Rollup across all bridges that have reported. ReadyBridges counts bridges
+	// where the backend is installed AND supported; InstalledBridges counts where
+	// the CLI is merely present. Supported is a property of the adapter, not a
+	// count. ReportingBridges is how many bridges reported at all (0 = unknown).
+	Supported        bool `json:"supported"`
+	ReportingBridges int  `json:"reporting_bridges"`
+	InstalledBridges int  `json:"installed_bridges"`
+	ReadyBridges     int  `json:"ready_bridges"`
 }
 
 // SetBackendRequest enables or disables one backend globally.

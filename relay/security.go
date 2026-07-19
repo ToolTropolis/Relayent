@@ -338,6 +338,14 @@ var knownBackends = map[string]bool{
 // backend-policy UI/API (a map has no order).
 var knownBackendList = []string{"claude", "codex", "gemini", "cursor"}
 
+// supportedBackends are those with a real (non-stub) adapter. A stub (gemini) can
+// never run a job regardless of policy or whether its CLI is installed. This
+// mirrors the bridge's adapter set so the admin UI can say "not supported" even
+// when no bridge is online to report it.
+var supportedBackends = map[string]bool{
+	"claude": true, "codex": true, "cursor": true, // gemini is a stub
+}
+
 // sanitizeCapabilities filters a bridge's self-report down to values the relay is
 // willing to serve back. Capabilities are attacker-controllable — anyone with a
 // valid pairing key can POST them — and they are later rendered on the status

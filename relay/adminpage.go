@@ -449,12 +449,12 @@ const adminHTML = `<!doctype html>
     <section id="view-backends" class="view">
       <div class="head"><h1>Backends</h1><p>Control which AI backends this relay exposes. A disabled backend is hidden from apps and refused at enqueue — use it to keep a public surface off paid subscriptions.</p></div>
       <div class="card">
-        <h2>Exposure policy</h2>
+        <h2>Backends</h2>
         <div class="tablewrap"><table>
-          <thead><tr><th>Backend</th><th>Status</th><th></th></tr></thead>
-          <tbody id="backends"><tr><td colspan="3" class="muted">Loading…</td></tr></tbody>
+          <thead><tr><th>Backend</th><th>Policy</th><th>Readiness</th><th>What to do</th><th></th></tr></thead>
+          <tbody id="backends"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
         </table></div>
-        <p class="hint">Enabled backends still only run when a user's bridge actually has that CLI installed and ready — this policy narrows what's offered, it doesn't add capability.</p>
+        <p class="hint"><b>Policy</b> is what you allow (the toggle). <b>Readiness</b> is whether a user's bridge can actually run it — a backend must be both <i>enabled</i> and <i>ready</i> to serve jobs. Readiness reflects the last bridge report across all users.</p>
       </div>
     </section>
 
@@ -852,15 +852,35 @@ async function loadConfig() {
 }
 
 /* ---- BACKENDS ---- */
+// Map a backend's reported state to a readiness label + operator guidance. Policy
+// (enabled) and readiness are separate: a backend serves jobs only when BOTH hold.
+function backendReadiness(b) {
+  if (!b.supported)
+    return { ok:false, label:"Not supported", hint:"This backend is a stub — no working adapter yet. It can't run jobs." };
+  if (!b.reporting_bridges)
+    return { ok:false, label:"No bridge reporting", hint:"No user's bridge has reported yet. Start a bridge on a machine with this CLI." };
+  if (b.ready_bridges > 0)
+    return { ok:true, label:"Ready", hint:"Installed on "+b.ready_bridges+" bridge(s). If jobs fail, the CLI is likely logged out — run it on the bridge and sign in." };
+  if (b.installed_bridges > 0)
+    return { ok:false, label:"Installed, not ready", hint:"The CLI is present but not usable. Check it runs and is signed in on the bridge." };
+  return { ok:false, label:"Not installed", hint:"No reporting bridge has this CLI. Install it, then sign in — it appears on the next poll." };
+}
 async function loadBackends() {
   const data = await api("GET", "/v1/admin/backends");
   const tb = $("backends"); tb.replaceChildren();
   const backends = (data && data.backends) || [];
-  if (!backends.length) { emptyRow(tb, 3, "No backends."); return; }
+  if (!backends.length) { emptyRow(tb, 5, "No backends."); return; }
   for (const b of backends) {
     const tr = document.createElement("tr");
     tr.appendChild(cell(b.name));
-    const st = document.createElement("td"); st.appendChild(pill(b.enabled, "enabled", "disabled")); tr.appendChild(st);
+    // Policy (the toggle state) — enabled/disabled.
+    const pol = document.createElement("td"); pol.appendChild(pill(b.enabled, "enabled", "disabled")); tr.appendChild(pol);
+    // Readiness — a separate axis from policy.
+    const r = backendReadiness(b);
+    const rd = document.createElement("td"); rd.appendChild(pill(r.ok, r.label, r.label)); tr.appendChild(rd);
+    // Guidance.
+    const gd = cell(r.hint); gd.className = "muted"; gd.style.maxWidth = "34ch"; gd.style.whiteSpace = "normal"; tr.appendChild(gd);
+    // Toggle.
     const act = document.createElement("td"); const wrap = document.createElement("div"); wrap.className = "actions";
     wrap.appendChild(btn(b.enabled ? "Disable" : "Enable", "ghost sm", () => setBackend(b.name, !b.enabled)));
     act.appendChild(wrap); tr.appendChild(act); tb.appendChild(tr);

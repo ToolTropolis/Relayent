@@ -687,9 +687,17 @@ components:
         last_seen: { type: string, format: date-time }
     AdminBackend:
       type: object
+      description: |
+        A backend's global exposure policy (enabled) plus a rollup of what bridges
+        report. Policy and readiness are distinct — a backend serves jobs only when
+        enabled AND ready. supported=false means the adapter is a stub (never runs).
       properties:
         name: { type: string, enum: [claude, codex, gemini, cursor] }
-        enabled: { type: boolean }
+        enabled: { type: boolean, description: Admin exposure policy (the toggle) }
+        supported: { type: boolean, description: A real adapter exists (not a stub) }
+        reporting_bridges: { type: integer, description: bridges that have reported at all }
+        installed_bridges: { type: integer, description: bridges where the CLI is present }
+        ready_bridges: { type: integer, description: bridges where it is installed AND supported }
     SetBackendRequest:
       type: object
       required: [enabled]

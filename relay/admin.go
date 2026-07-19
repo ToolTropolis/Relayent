@@ -298,9 +298,49 @@ func (s *server) adminListBackends(w http.ResponseWriter, r *http.Request, p *Pr
 		writeErr(w, http.StatusInternalServerError, "could not read backend policy")
 		return
 	}
+	// Roll up what bridges actually report per backend, across all users. Policy
+	// (Enabled) is global; readiness comes from each bridge's capability report.
+	type rollup struct{ supported, reporting, installed, ready int }
+	agg := map[string]*rollup{}
+	for _, name := range knownBackendList {
+		agg[name] = &rollup{}
+	}
+	if users, err := s.store.ListUsers(); err == nil {
+		for _, u := range users {
+			caps, reportedAt, _ := s.q.Capabilities(u.Sub)
+			if reportedAt.IsZero() {
+				continue // this user's bridge hasn't reported
+			}
+			for _, b := range caps.Backends {
+				r := agg[b.Name]
+				if r == nil {
+					continue
+				}
+				r.reporting++
+				if b.Supported {
+					r.supported = 1
+				}
+				if b.Installed {
+					r.installed++
+				}
+				if b.Ready {
+					r.ready++
+				}
+			}
+		}
+	}
+
 	out := make([]api.AdminBackend, 0, len(knownBackendList))
 	for _, name := range knownBackendList {
-		out = append(out, api.AdminBackend{Name: name, Enabled: !disabled[name]})
+		r := agg[name]
+		out = append(out, api.AdminBackend{
+			Name:             name,
+			Enabled:          !disabled[name],
+			Supported:        supportedBackends[name], // static: a stub is never supported
+			ReportingBridges: r.reporting,
+			InstalledBridges: r.installed,
+			ReadyBridges:     r.ready,
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"backends": out})
 }
