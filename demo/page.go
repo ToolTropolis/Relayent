@@ -108,6 +108,12 @@ const demoHTML = `<!doctype html>
   .bubble.think { color:var(--muted); }
   .empty { color:var(--faint); text-align:center; margin:auto; max-width:36ch; }
 
+  .suggestions { display:flex; flex-wrap:wrap; gap:.5rem; padding:.2rem 0 .8rem; }
+  .chip { background:var(--card-2); border:1px solid var(--line); color:var(--fg-dim);
+    font:inherit; font-size:.84rem; padding:.4rem .75rem; border-radius:999px; cursor:pointer;
+    transition:border-color .12s ease, color .12s ease; }
+  .chip:hover { border-color:var(--accent); color:var(--fg); }
+  .chip:disabled { opacity:.5; cursor:not-allowed; }
   form { display:flex; gap:.6rem; align-items:flex-end; border-top:1px solid var(--line-soft);
     padding-top:.9rem; }
   textarea { flex:1; resize:none; background:var(--bg); border:1px solid var(--line); color:var(--fg);
@@ -153,6 +159,13 @@ const demoHTML = `<!doctype html>
     <div id="log">
       <div class="empty" id="empty">Pick a model and say hello. Responses run on a real CLI
       subscription via Relayent — there's no API key behind this.</div>
+    </div>
+    <div id="suggestions" class="suggestions" aria-label="Suggested prompts">
+      <button type="button" class="chip" data-p="Explain what Relayent is in two sentences.">What is Relayent?</button>
+      <button type="button" class="chip" data-p="Write a haiku about the ocean.">Write a haiku</button>
+      <button type="button" class="chip" data-p="Explain the difference between TCP and UDP simply.">TCP vs UDP</button>
+      <button type="button" class="chip" data-p="Give me a one-paragraph summary of how HTTPS works.">How does HTTPS work?</button>
+      <button type="button" class="chip" data-p="Suggest three names for a coffee shop and say why.">Name a coffee shop</button>
     </div>
     <form id="form">
       <textarea id="prompt" rows="1" placeholder="Message…" autocomplete="off"></textarea>
@@ -221,17 +234,22 @@ async function loadModels() {
       sel.value = pref + "|" + (models[pref].def || (models[pref].list[0] || ""));
     }
     $("send").disabled = !d.online;
+    setChips(!!d.online && (d.backends||[]).length > 0);
   } catch (e) {
     setStatus(false);
     const sel = $("model"); sel.replaceChildren();
     const o = document.createElement("option"); o.textContent = "relay unreachable"; sel.appendChild(o);
-    $("send").disabled = true;
+    $("send").disabled = true; setChips(false);
   }
 }
+// Enable/disable the starter chips with availability.
+function setChips(on) { for (const c of document.querySelectorAll(".chip")) c.disabled = !on; }
 
 async function send(prompt) {
   const [backend, model] = $("model").value.split("|");
   if (!backend) { return; }
+  // Starter prompts are for an empty chat; once a message is sent, hide them.
+  const sug = $("suggestions"); if (sug) sug.style.display = "none";
   busy = true; $("send").disabled = true;
   addMsg("user", prompt);
   const thinking = addMsg("bot", "thinking…", "think");
@@ -261,6 +279,13 @@ $("form").addEventListener("submit", e => {
 $("prompt").addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("form").requestSubmit(); }
 });
+// Suggested-prompt chips: click sends that prompt straight away (when online).
+for (const chip of document.querySelectorAll(".chip")) {
+  chip.addEventListener("click", () => {
+    if (busy || $("send").disabled) return;
+    send(chip.dataset.p);
+  });
+}
 function autosize() { const t = $("prompt"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 160) + "px"; }
 $("prompt").addEventListener("input", autosize);
 
