@@ -383,8 +383,8 @@ const adminHTML = `<!doctype html>
       <div class="navgroup-items" data-group-items="integration">
         <button class="navlink" data-view="creds"><span class="ic">⚿</span> App credentials</button>
       </div>
-      <button class="navgroup" data-group="help" aria-expanded="true"><span class="gcaret">▾</span> Help</button>
-      <div class="navgroup-items" data-group-items="help">
+      <button class="navgroup" data-group="help" aria-expanded="false"><span class="gcaret">▾</span> Help</button>
+      <div class="navgroup-items" data-group-items="help" hidden>
         <button class="navlink" id="guide-toggle" data-view="help" aria-expanded="false">
           <span class="ic tw" id="guide-caret">▸</span> Guide</button>
         <div class="subnav" id="guide-sub" hidden>
@@ -1101,7 +1101,7 @@ function setGroup(name, open) {
 }
 for (const hdr of document.querySelectorAll(".navgroup")) {
   const name = hdr.dataset.group;
-  let open = true;
+  let open = name !== "help"; // Help starts folded; other groups start expanded.
   try { const v = localStorage.getItem("nav.grp." + name); if (v !== null) open = v === "1"; } catch (e) {}
   setGroup(name, open);
   hdr.addEventListener("click", () => setGroup(name, hdr.getAttribute("aria-expanded") !== "true"));
