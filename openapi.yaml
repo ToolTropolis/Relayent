@@ -44,7 +44,15 @@ paths:
                   status: { type: string, example: ok }
   /v1/bridge/online:
     get:
-      summary: Is a bridge currently polling for this pairing key?
+      summary: Is a bridge currently polling for this identity?
+      parameters:
+        - name: target_user
+          in: query
+          schema: { type: string }
+          description: |
+            Multi-tenant, app credentials only: whose bridge to check. Required for
+            an app credential (it has no bridge of its own); ignored for a bridge/
+            legacy caller, which checks its own. Naming a different user is rejected.
       responses:
         "200":
           description: Presence status
@@ -358,6 +366,14 @@ paths:
           in: path
           required: true
           schema: { type: string }
+        - name: target_user
+          in: query
+          schema: { type: string }
+          description: |
+            Multi-tenant, app credentials only: the user the job was enqueued for
+            (the same target_user used on POST /v1/jobs). Required for an app
+            credential; ignored for a bridge/legacy caller. Naming a different user
+            is rejected.
       responses:
         "200":
           description: Cancellation outcome
@@ -378,6 +394,15 @@ paths:
           in: query
           schema: { type: string, enum: ["0", "1", "true", "false"] }
           description: Set to 1/true to long-poll until the result is ready.
+        - name: target_user
+          in: query
+          schema: { type: string }
+          description: |
+            Multi-tenant, app credentials only: the user the job was enqueued for
+            (the same target_user used on POST /v1/jobs). Required for an app
+            credential to read back its result — a job lives in the target user's
+            namespace, so without this the lookup runs under the app's own identity
+            and 404s. Ignored for a bridge/legacy caller.
       responses:
         "200":
           description: Current job status and result

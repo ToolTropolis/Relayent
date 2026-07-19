@@ -536,6 +536,33 @@ func (s *server) routeTarget(p *Principal, targetUser string) (string, error) {
 	return p.UserID, nil
 }
 
+// resolveReadTarget decides whose namespace a READ/cancel/presence call operates
+// on, mirroring routeTarget's authorization for the read side. An app enqueues
+// into target_user's namespace, so it must name the SAME target_user (via the
+// ?target_user= query) to fetch a result, cancel, or check presence — otherwise
+// the lookup runs under the app's own id and every read 404s. Self-routing
+// principals (bridge/legacy/OIDC) ignore the query and use their own id; naming a
+// different user is rejected, so the anti-spoof guard is unchanged.
+func (s *server) resolveReadTarget(p *Principal, r *http.Request) (string, error) {
+	targetUser := strings.TrimSpace(r.URL.Query().Get("target_user"))
+
+	if p.Kind == KindApp {
+		if targetUser == "" {
+			return "", fmt.Errorf("target_user query parameter is required for an app credential")
+		}
+		u, err := s.store.GetUser(targetUser)
+		if err != nil || u.Disabled {
+			return "", fmt.Errorf("target_user is not a known active user")
+		}
+		return targetUser, nil
+	}
+
+	if targetUser != "" && targetUser != p.UserID {
+		return "", fmt.Errorf("this credential may only access its own jobs")
+	}
+	return p.UserID, nil
+}
+
 func (s *server) claimNext(w http.ResponseWriter, r *http.Request, p *Principal) {
 	wait := defaultNextWait
 	if v := r.URL.Query().Get("wait"); v != "" {
@@ -591,11 +618,16 @@ func jsonLen(v any) int {
 
 func (s *server) fetch(w http.ResponseWriter, r *http.Request, p *Principal) {
 	id := r.PathValue("id")
+	target, err := s.resolveReadTarget(p, r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	wait := time.Duration(0)
 	if r.URL.Query().Get("wait") == "1" || strings.EqualFold(r.URL.Query().Get("wait"), "true") {
 		wait = fetchWait
 	}
-	res, ok := s.q.Fetch(p.UserID, id, wait)
+	res, ok := s.q.Fetch(target, id, wait)
 	if !ok {
 		writeErr(w, http.StatusNotFound, "unknown job for this identity")
 		return
@@ -609,7 +641,12 @@ func (s *server) fetch(w http.ResponseWriter, r *http.Request, p *Principal) {
 // caller is not misled about whether work (and quota) was actually saved.
 func (s *server) cancel(w http.ResponseWriter, r *http.Request, p *Principal) {
 	id := r.PathValue("id")
-	prev, ok := s.q.Cancel(p.UserID, id)
+	target, err := s.resolveReadTarget(p, r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	prev, ok := s.q.Cancel(target, id)
 	if !ok {
 		writeErr(w, http.StatusNotFound, "unknown job for this identity")
 		return
@@ -636,7 +673,12 @@ func (s *server) cancel(w http.ResponseWriter, r *http.Request, p *Principal) {
 }
 
 func (s *server) bridgeOnline(w http.ResponseWriter, r *http.Request, p *Principal) {
-	writeJSON(w, http.StatusOK, api.BridgeOnlineResponse{Online: s.q.BridgeOnline(p.UserID)})
+	target, err := s.resolveReadTarget(p, r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, api.BridgeOnlineResponse{Online: s.q.BridgeOnline(target)})
 }
 
 // status reports relay-level health and this principal's view of the system,

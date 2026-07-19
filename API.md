@@ -267,6 +267,19 @@ The job runs on **alice's** subscription. A different `target_user` routes to th
 Omitting it with an app credential is a `400`. (A bridge or legacy pairing-key caller routes to
 itself and ignores `target_user`.)
 
+**Reading back is also per-user.** A job lives in the target user's namespace, so an app must
+pass the **same `target_user`** as a query parameter on the read-side calls too — otherwise the
+lookup runs under the app's own identity and 404s:
+
+```
+GET    /v1/jobs/{id}?wait=1&target_user=alice
+DELETE /v1/jobs/{id}?target_user=alice
+GET    /v1/bridge/online?target_user=alice
+```
+
+For a bridge or legacy caller these are self-scoped and the parameter is optional (naming a
+different user is rejected).
+
 ### Signing in (operators)
 
 Humans use the **`/login`** page — an HTML page, not a JSON endpoint. It offers OIDC sign-in
