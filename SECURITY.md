@@ -155,7 +155,12 @@ removed once a real OIDC admin exists. Anyone holding it owns the control plane.
 
 **Sign-in is one surface, and admin is granted, not assumed.** Humans authenticate only at the
 `/login` page (OIDC, or the bootstrap token); the OIDC callback then routes by role — an admin to
-`/admin`, a regular user to `/`. The **first user ever to sign in becomes the admin**; everyone
+`/admin`, a regular user to `/`. On a multi-tenant relay the root itself routes by session: an
+anonymous visitor is sent to `/login` (never any content), an admin to `/admin`, and a signed-in
+user to their own status page. That page is backed by `GET /v1/me`, which is authenticated by the
+session cookie and takes its subject *from the session only* — there is no `target_user`
+parameter, so a user can see their own bridge and pending count but never another user's, and it
+returns no prompt or result content. The **first user ever to sign in becomes the admin**; everyone
 after is a plain user with no admin scope until an admin promotes them. Role changes go *only*
 through `POST /v1/admin/users/{sub}/role` — a normal login can never self-promote, because an
 existing user's stored role is preserved on login. An admin cannot demote or delete themselves,

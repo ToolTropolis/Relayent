@@ -214,6 +214,13 @@ grades the deployment honestly — if it says *"NO — traffic is in the clear"*
 network-reachable without TLS and you should fix that before using it. The key stays in the
 page and is only ever sent to the relay's own `/v1` API.
 
+On a **multi-tenant** relay the root (`/`) is a human entry point rather than a key prompt: an
+anonymous visitor is sent to `/login`, an admin to the `/admin` console, and a signed-in user to
+their own status page (their bridge, pending jobs, and backends — served from `GET /v1/me`,
+scoped to them). The pairing-key dashboard above is still reachable at **`/status`** for
+operators who authenticate with a key. In single-key mode `/` serves the key dashboard directly,
+as before.
+
 The page shows your key's **fingerprint** (an 8-char hash, never the key). It matches what
 `relayent-bridge config list` prints — that is how you confirm both sides hold the same key.
 

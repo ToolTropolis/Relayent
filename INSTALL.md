@@ -275,8 +275,10 @@ is why a weak key like `devkey` is tolerated here and nowhere else.
 
 **Verify:** `curl -s localhost:8787/v1/health` → `{"status":"ok"}`
 
-Status page: <http://localhost:8787> (enter the key). Every relay serves this at its own root
-URL — see [Checking status](#checking-status).
+Status page: <http://localhost:8787> (enter the key). A single-key relay serves the pairing-key
+dashboard at its root; a multi-tenant relay serves it at `/status` and routes `/` by sign-in
+instead (anonymous → `/login`, admin → `/admin`, user → their own status page). See
+[Checking status](#checking-status).
 
 ### 2B: Private network (recommended for real use)
 

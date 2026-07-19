@@ -26,8 +26,12 @@ New to Relayent? Read [Concepts](#concepts) first. Integrating? See the
 | `DELETE` | `/v1/jobs/{id}` | Cancel a job | app |
 | `GET` | `/v1/jobs/next` | Claim the next job | bridge only |
 | `POST` | `/v1/jobs/{id}/result` | Post a result | bridge only |
+| `GET` | `/v1/me` | The signed-in user's own status | signed-in user (session) |
 
-Apps use the first seven. The last two belong to the bridge daemon.
+Apps use the first seven; the next two belong to the bridge daemon. `/v1/me` is for a
+human's own browser session on a multi-tenant relay (not app or bridge traffic) — it backs the
+per-user status page and is authenticated by the OIDC session cookie, scoped entirely to the
+caller (no `target_user`), and carries no prompt or result content.
 
 ---
 
@@ -285,8 +289,10 @@ different user is rejected).
 Humans use the **`/login`** page — an HTML page, not a JSON endpoint. It offers OIDC sign-in
 ("Sign in with Google", or your configured provider) and a bootstrap-admin-token field. On
 success the browser is routed **by role**: an admin lands on the **`/admin`** console, a regular
-user on **`/`** (their own status page). The **first user ever to sign in becomes the admin**;
-everyone after is a regular user until an admin promotes them.
+user on **`/`** — their own status page, backed by `GET /v1/me`, showing their bridge, pending
+jobs, and backends (their data only, no content). An anonymous visitor to `/` is sent to
+`/login`; the pairing-key dashboard remains at `/status`. The **first user ever to sign in
+becomes the admin**; everyone after is a regular user until an admin promotes them.
 
 ### Admin API (`/v1/admin/*`)
 

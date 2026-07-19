@@ -95,8 +95,13 @@ credentials are `<id>.<secret>`; only `sha256(secret)` is stored, compared const
 network-reachable relay.
 
 **12. Admin scope is granted, never assumed; humans sign in on one surface.** OIDC login is at
-`/login` (`login.go`); the callback (`oidc.go`) routes by role — admin→`/admin`, user→`/`. The
-**first** stored user bootstraps to admin (`CountUsers()==0`); all others need explicit promotion
+`/login` (`login.go`); the callback (`oidc.go`) routes by role — admin→`/admin`, user→`/`. On a
+multi-tenant relay `/` itself (`statusPage`, `statuspage.go`) routes by session — anonymous→`/login`,
+admin→`/admin`, user→their own page (`mePageHTML`, backed by session-scoped `GET /v1/me` in
+`me.go`); the pairing-key dashboard moves to `/status` (`classicStatusPage`). Single-key mode:
+`/` serves the key dashboard directly. `/v1/me` derives the subject from the session only (no
+`target_user`) — do not add one. The **first** stored user bootstraps to admin (`CountUsers()==0`);
+all others need explicit promotion
 via `POST /v1/admin/users/{sub}/role`. `UpsertUser` **preserves** an existing role, so a login
 can't self-promote — do not change that. An admin can't self-demote/self-delete (`admin.go`
 guards). The admin API (`admin.go`) and console (`adminpage.go`) never return content;
