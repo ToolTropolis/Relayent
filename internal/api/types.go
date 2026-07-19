@@ -228,6 +228,11 @@ type AdminConfig struct {
 	OIDCRedirect string `json:"oidc_redirect,omitempty"`  // non-secret
 	OIDCProvider string `json:"oidc_provider,omitempty"`  // friendly name, e.g. "Google"
 	HostedDomain string `json:"hosted_domain,omitempty"`  // Workspace lock, if any
+
+	// DemoURL, if set (RELAYENT_DEMO_URL), is the public demo/playground this relay
+	// backs. Non-secret; the console shows a "View demo" link when present. The demo
+	// itself never links back — it is a public surface and must not advertise /admin.
+	DemoURL string `json:"demo_url,omitempty"`
 }
 
 // ErrorResponse is the uniform error envelope for 4xx/5xx responses.

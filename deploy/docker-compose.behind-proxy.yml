@@ -66,6 +66,10 @@ services:
       RELAYENT_OIDC_CLIENT_SECRET: ${RELAYENT_OIDC_CLIENT_SECRET:-}
       RELAYENT_OIDC_REDIRECT_URL: ${RELAYENT_OIDC_REDIRECT_URL:-}
       RELAYENT_OIDC_HOSTED_DOMAIN: ${RELAYENT_OIDC_HOSTED_DOMAIN:-}
+      # Optional: the public demo/playground this relay backs. When set, the admin
+      # console shows a "View demo" link. Non-secret. The demo never links back to
+      # /admin — it is a public surface.
+      RELAYENT_DEMO_URL: ${RELAYENT_DEMO_URL:-}
     volumes:
       - relayent-data:/data       # control-plane store (users, hashed creds, audit)
     depends_on:

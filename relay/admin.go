@@ -223,6 +223,7 @@ func (s *server) adminConfig(w http.ResponseWriter, r *http.Request, p *Principa
 		PairingKeySet: !s.keys.Empty(),
 		AdminTokenSet: s.adminToken != "",
 		OIDCEnabled:   s.oidc != nil,
+		DemoURL:       os.Getenv("RELAYENT_DEMO_URL"),
 	}
 	if s.oidc != nil {
 		cfg.OIDCIssuer = s.oidc.issuer
