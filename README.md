@@ -22,9 +22,27 @@ approvals it needs.
 
 ## Why
 
-If you (or your users) already pay for Claude Code / Codex / Gemini / Cursor, you shouldn't
-have to buy API tokens to use those same models inside another app. Relayent reuses the CLI's
-own authenticated session — it never stores or handles credentials.
+Your Claude / Codex / Gemini / Cursor subscription is built for one thing: **you, coding, in
+your editor or terminal.** It's a flat monthly price and it's generous — you can lean on the
+model all day inside your IDE or CLI.
+
+But the moment you want to put a model **inside the product you're building** — a chat feature,
+an in-app assistant, a summarizer — that subscription is off the table. Application features
+have to talk to the metered **API**, billed per token. And for sustained, real-world use the API
+runs materially more expensive than the flat subscription you're already paying for. So you end
+up paying twice for the same models: once for the subscription you can only use yourself, and
+again — at API rates — for the feature you ship to users.
+
+**Relayent closes that gap.** It routes your app's AI calls to the CLI subscription already
+running and signed in on a machine you (or your user) control, so the feature you ship runs on
+the plan you already pay for instead of a second, metered bill. It reuses the CLI's own
+authenticated session and never stores or handles credentials.
+
+That reframes the unit of scale, too: instead of one central API bill that grows with every
+user, **each user brings their own subscription.** Your product's chat feature runs on *their*
+plan, on *their* machine — which is exactly why isolating one user's jobs from another's (so
+nobody's prompt ever spends someone else's quota) is the core problem Relayent's multi-tenant
+mode solves.
 
 ## Components
 
@@ -268,6 +286,12 @@ Enterprise SSO (Azure AD, Okta, any OIDC issuer) is a change of issuer URL — s
 relay stores **no passwords** (OIDC) and only **hashed** machine credentials plus a non-secret
 user directory. Full setup is in [INSTALL.md](INSTALL.md#multi-user-multi-tenant-mode); the
 changed threat model is in [SECURITY.md](SECURITY.md#multi-tenant-model-the-changed-threat-model).
+
+**How isolation works, end to end:**
+
+![Relayent multi-tenant relay architecture](docs/architecture/system-arch.svg)
+
+*(Editable version: [`docs/architecture/system-arch.excalidraw`](docs/architecture/system-arch.excalidraw) — open at [excalidraw.com](https://excalidraw.com).)*
 
 ## Security
 

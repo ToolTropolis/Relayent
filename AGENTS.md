@@ -128,10 +128,13 @@ return fmt.Errorf("refusing to start: RELAYENT_PAIRING_KEY is not set and %s is 
     "  Generate one:  relayent-relay keygen", listenAddr)
 ```
 
-**Adding a backend:** implement `adapters.Adapter` in `bridge/adapters/`, add one line to
-`NewRegistry()`. Stubs return `Available()=false` and implement `BinPresent()` so the UI can
-tell "CLI missing" from "not implemented". Add the name to `knownBackends` in
-`relay/security.go` or the relay will drop it. Set `cmd.Dir = req.WorkDir`.
+**Adding a backend:** implement `adapters.Adapter` in `bridge/adapters/` (`Name`, `Available`,
+`Run`; optionally `ModelLister`), add one line to `NewRegistry()`. The registry's `Describe()`
+rolls each backend up as installed/supported/ready, so the UI can tell "CLI missing" from
+"adapter not implemented" — no separate stub type. Add the name to `knownBackends` in
+`relay/security.go` or the relay will drop it. Set `cmd.Dir = req.WorkDir`. (All four backends —
+`claude`, `codex`, `cursor`, `gemini` — are implemented adapters today; there are no stub
+adapters left.)
 
 **Wire types:** `internal/api/types.go` and `openapi.yaml` must stay in step, including the
 admin/auth surface (`/v1/admin/*`, `/v1/auth/*`) and the `/login` + `/admin` HTML pages. Verify

@@ -676,7 +676,7 @@ your CLI subscription → back.
 | Result | Meaning | Fix |
 |---|---|---|
 | `{"online":false}` | No bridge polling with this key | `relayent-bridge status`; check both sides use the same key |
-| `not supported yet by this bridge` | Backend is a stub (`gemini`) | Use one showing `ready:true` |
+| `not supported yet by this bridge` | The bridge has no adapter for that backend | Pick a backend showing `ready:true` in `/v1/bridge/capabilities` |
 | `status:"error"` naming a CLI | The CLI failed — usually logged out | Run it manually, e.g. `cursor-agent status` |
 | Nothing after ~90s | Bridge claimed it but the CLI hung | `relayent-bridge monitor` and watch the log panel |
 

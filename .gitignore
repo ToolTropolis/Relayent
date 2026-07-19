@@ -17,3 +17,6 @@ __pycache__/
 
 # Private session/handoff notes — never in the public repo.
 HANDOFF.md
+
+# raw screenshot captures — never committed
+.screenshots-raw/

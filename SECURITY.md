@@ -1,8 +1,10 @@
 # Relayent Security
 
-Relayent connects an app you run to a CLI subscription on someone's laptop. That is
-a genuinely sensitive thing to do, so this document states plainly what it protects,
-what it does not, and what you must get right yourself.
+Relayent exists so an application feature can run on a CLI subscription you already
+pay for, instead of a metered API bill — which means it connects an app you run to a
+CLI subscription on someone's laptop. That is a genuinely sensitive thing to do, so
+this document states plainly what it protects, what it does not, and what you must get
+right yourself.
 
 If you only read one section, read [The one thing that matters](#the-one-thing-that-matters).
 

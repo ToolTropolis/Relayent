@@ -161,7 +161,7 @@ Content-Type: application/json
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `backend` | string | yes | `claude` \| `codex` \| `cursor`. Use one reporting `ready: true`. |
+| `backend` | string | yes | `claude` \| `codex` \| `cursor` \| `gemini`. Use one reporting `ready: true`. |
 | `prompt` | string | yes | The content prompt. |
 | `model` | string | no | A value from `models[]`. Omit for the backend's default. |
 | `system` | string | no | System instruction. |
