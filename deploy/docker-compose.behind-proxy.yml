@@ -74,8 +74,16 @@ services:
       # console's Settings. Inside a container os.Hostname() is only the container
       # ID, so set this to the real host/VPS name (e.g. "prod-1" or a domain).
       RELAYENT_HOST_LABEL: ${RELAYENT_HOST_LABEL:-}
+      # Optional: path to a MaxMind GeoLite2-Country.mmdb for the demo "Demo
+      # visitors" analytics. Enables the country breakdown; without it countries
+      # show as "??" and everything else still works. Mount the DB read-only (see
+      # volumes below) and point this at it.
+      RELAYENT_GEOIP_DB: ${RELAYENT_GEOIP_DB:-}
     volumes:
       - relayent-data:/data       # control-plane store (users, hashed creds, audit)
+      # Uncomment to enable GeoIP country lookup for demo analytics. Supply your
+      # own GeoLite2-Country.mmdb and set RELAYENT_GEOIP_DB=/geoip/GeoLite2-Country.mmdb.
+      # - ./geoip:/geoip:ro
     depends_on:
       relayent-data-init:
         condition: service_completed_successfully

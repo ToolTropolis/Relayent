@@ -59,6 +59,7 @@ type server struct {
 	store      *Store    // control-plane persistence; nil = legacy no-persistence mode
 	oidc       *oidcAuth // human login via OIDC; nil = not configured
 	adminToken string    // bootstrap admin bearer (RELAYENT_ADMIN_TOKEN); "" = disabled
+	geoip      *geoIP    // offline IP→country for demo analytics; nil = no GeoIP DB configured
 	startedAt  time.Time
 	authLimit  *limiter // guards credential guessing (keyed by client IP)
 	jobLimit   *limiter // guards job floods / quota burn (keyed by key fingerprint)
@@ -150,12 +151,20 @@ func main() {
 		log.Fatalf("[relayent-relay] %v", err)
 	}
 
+	// Offline IP→country for the demo visitor stats. Optional and best-effort: a
+	// missing/unset DB just means no country breakdown (see geoip.go).
+	geo := openGeoIP(os.Getenv("RELAYENT_GEOIP_DB"))
+	if geo != nil {
+		defer geo.Close()
+	}
+
 	srv := &server{
 		q:          NewQueue(jobTTL, onlineWindow),
 		keys:       keys,
 		store:      store,
 		oidc:       oidcAuth,
 		adminToken: os.Getenv("RELAYENT_ADMIN_TOKEN"),
+		geoip:      geo,
 		startedAt:  time.Now(),
 		authLimit:  newLimiter(authRatePerSec, authBurst),
 		jobLimit:   newLimiter(jobRatePerSec, jobBurst),
@@ -206,6 +215,11 @@ func main() {
 	mux.HandleFunc("DELETE /v1/admin/bridges/{id}", srv.authorize(ScopeAdmin, srv.adminRevokeBridge))
 	mux.HandleFunc("GET /v1/admin/backends", srv.authorize(ScopeAdmin, srv.adminListBackends))
 	mux.HandleFunc("POST /v1/admin/backends/{name}", srv.authorize(ScopeAdmin, srv.adminSetBackend))
+	mux.HandleFunc("GET /v1/admin/demo-stats", srv.authorize(ScopeAdmin, srv.adminDemoStats))
+
+	// Demo visitor analytics ingest. Authed by an app credential scoped to
+	// demo-stats ONLY — it can write a content-free hit and nothing else.
+	mux.HandleFunc("POST /v1/demo/hit", srv.authorize(ScopeDemoStats, srv.demoIngest))
 
 	// The admin dashboard (multi-tenant only). The page itself is public HTML —
 	// it authenticates its /v1/admin/* XHRs via the OIDC session cookie or a

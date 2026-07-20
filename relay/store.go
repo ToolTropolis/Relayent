@@ -51,7 +51,9 @@ var (
 	bktBindings = []byte("bridge_bindings") // bridge_id    -> BridgeBinding (JSON)
 	bktAudit    = []byte("audit")           // seq (uint64) -> AuditEvent (JSON)
 	bktSettings = []byte("settings")        // key          -> value (JSON) — global config
-	allBuckets  = [][]byte{bktUsers, bktAppCreds, bktEnroll, bktBindings, bktAudit, bktSettings}
+	// bktDemoHits (demostats.go) holds append-only, capped, content-free demo
+	// visitor hits for the admin analytics view.
+	allBuckets = [][]byte{bktUsers, bktAppCreds, bktEnroll, bktBindings, bktAudit, bktSettings, bktDemoHits}
 )
 
 // settingDisabledBackends is the settings key holding the set of backend names an

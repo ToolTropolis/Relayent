@@ -282,6 +282,16 @@ const adminHTML = `<!doctype html>
   .tile .l { color:var(--muted); font-size:.72rem; text-transform:uppercase;
     letter-spacing:.06em; margin-top:.4rem; font-weight:600; }
 
+  /* Demo-visitors: CSS bar chart (no external libs — CSP forbids them) + table grids. */
+  .bars { display:flex; align-items:flex-end; gap:2px; height:120px; overflow-x:auto; padding-top:.3rem; }
+  .bars .bar { flex:1 0 6px; min-width:6px; background:var(--accent-soft); border-radius:3px 3px 0 0;
+    position:relative; align-self:flex-end; }
+  .bars .bar > i { position:absolute; inset:auto 0 0; background:var(--accent); border-radius:3px 3px 0 0; }
+  .bars .bar:hover { outline:1px solid var(--accent); }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:1rem; }
+  .grid3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem; }
+  .brk { max-width:420px; }
+
   .banner { display:none; padding:.75rem .95rem; border-radius:10px; margin-bottom:1.1rem;
     border:1px solid var(--line); }
   .banner.show { display:block; }
@@ -371,6 +381,7 @@ const adminHTML = `<!doctype html>
       <div class="navgroup-items" data-group-items="admin">
         <button class="navlink" data-view="users"><span class="ic">◱</span> Users</button>
         <button class="navlink" data-view="audit"><span class="ic">≣</span> Audit</button>
+        <button class="navlink" data-view="demostats"><span class="ic">◔</span> Demo visitors</button>
       </div>
       <button class="navgroup" data-group="configure" aria-expanded="true"><span class="gcaret">▾</span> Configure</button>
       <div class="navgroup-items" data-group-items="configure">
@@ -448,6 +459,71 @@ const adminHTML = `<!doctype html>
           <thead><tr><th>When</th><th>Event</th><th>User</th><th>Backend</th><th>Status</th><th>Bytes</th></tr></thead>
           <tbody id="audit"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
         </table></div>
+      </div>
+    </section>
+
+    <!-- DEMO VISITORS -->
+    <section id="view-demostats" class="view">
+      <div class="head"><h1>Demo visitors</h1><p>Traffic to the public demo — aggregate counts and coarse buckets only. No IPs, no URLs, no per-visitor rows are ever stored.</p></div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between;align-items:baseline">
+          <h2>At a glance <span class="note muted" id="demo-range"></span></h2>
+          <select id="demo-days">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="365">Last year</option>
+          </select>
+        </div>
+        <div class="stat">
+          <div class="tile"><div class="n" id="d-total">—</div><div class="l">Visits</div></div>
+          <div class="tile"><div class="n" id="d-uniques">—</div><div class="l">Unique visitors</div></div>
+          <div class="tile"><div class="n" id="d-today">—</div><div class="l">Today</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Visits per day</h2>
+        <div class="bars" id="d-series"><span class="muted">Loading…</span></div>
+      </div>
+      <div class="card">
+        <h2>Where visitors are</h2>
+        <div class="brk"><div class="tablewrap"><table>
+          <thead><tr><th>Country</th><th>Visits</th></tr></thead>
+          <tbody id="d-countries"><tr><td colspan="2" class="muted">Loading…</td></tr></tbody>
+        </table></div></div>
+        <p class="hint">Country comes from an offline GeoIP database on the relay (set <code>RELAYENT_GEOIP_DB</code>). Without it, country shows as <code>??</code> and everything else still works.</p>
+      </div>
+      <div class="card">
+        <h2>How they got here</h2>
+        <div class="grid2">
+          <div class="tablewrap"><table>
+            <thead><tr><th>Referrer</th><th>Visits</th></tr></thead>
+            <tbody id="d-referrers"><tr><td colspan="2" class="muted">Loading…</td></tr></tbody>
+          </table></div>
+          <div class="tablewrap"><table>
+            <thead><tr><th>Campaign source</th><th>Visits</th></tr></thead>
+            <tbody id="d-sources"><tr><td colspan="2" class="muted">Loading…</td></tr></tbody>
+          </table></div>
+        </div>
+        <p class="hint">Referrer is the referring site's host only (never the full URL). Campaign source is the <code>utm_source</code> parameter, when present.</p>
+      </div>
+      <div class="card">
+        <h2>What they use</h2>
+        <div class="grid3">
+          <div class="tablewrap"><table>
+            <thead><tr><th>Device</th><th>Visits</th></tr></thead>
+            <tbody id="d-devices"><tr><td colspan="2" class="muted">Loading…</td></tr></tbody>
+          </table></div>
+          <div class="tablewrap"><table>
+            <thead><tr><th>Browser</th><th>Visits</th></tr></thead>
+            <tbody id="d-browsers"><tr><td colspan="2" class="muted">Loading…</td></tr></tbody>
+          </table></div>
+          <div class="tablewrap"><table>
+            <thead><tr><th>OS</th><th>Visits</th></tr></thead>
+            <tbody id="d-oses"><tr><td colspan="2" class="muted">Loading…</td></tr></tbody>
+          </table></div>
+        </div>
+        <p class="hint">Device, browser and OS are coarse families parsed from the User-Agent — never a full fingerprint.</p>
       </div>
     </section>
 
@@ -705,7 +781,7 @@ async function api(method, path, body) {
 function showApp() { $("shell").style.display = "grid"; }
 
 /* ---- view router ---- */
-const VIEWS = ["users","audit","status","enroll","backends","settings","creds","help"];
+const VIEWS = ["users","audit","demostats","status","enroll","backends","settings","creds","help"];
 function go(view) {
   if (!VIEWS.includes(view)) view = "users";
   for (const v of VIEWS) $("view-" + v).classList.toggle("active", v === view);
@@ -720,6 +796,7 @@ async function loadView(view) {
   try {
     if (view === "users")    await loadUsers();
     if (view === "audit")    await loadAudit();
+    if (view === "demostats") await loadDemoStats();
     if (view === "status")   await loadStatus();
     if (view === "enroll")   await loadEnrollUsers();
     if (view === "backends") await loadBackends();
@@ -816,6 +893,53 @@ async function loadAudit() {
 }
 
 /* ---- STATUS ---- */
+/* ---- DEMO VISITORS ---- */
+let demoDaysBound = false;
+function fillBreak(id, buckets, emptyText) {
+  const tb = $(id); tb.replaceChildren();
+  buckets = buckets || [];
+  if (!buckets.length) { emptyRow(tb, 2, emptyText); return; }
+  for (const b of buckets) {
+    const tr = document.createElement("tr");
+    tr.appendChild(cell(b.label));
+    const c = cell(String(b.count)); c.style.fontVariantNumeric = "tabular-nums"; tr.appendChild(c);
+    tb.appendChild(tr);
+  }
+}
+async function loadDemoStats() {
+  if (!demoDaysBound) {  // bind the range selector once, on first open
+    $("demo-days").addEventListener("change", () => { loadDemoStats(); });
+    demoDaysBound = true;
+  }
+  const days = $("demo-days").value || "30";
+  const data = await api("GET", "/v1/admin/demo-stats?days=" + encodeURIComponent(days)) || {};
+  $("d-total").textContent = data.total_hits || 0;
+  $("d-uniques").textContent = data.uniques || 0;
+  $("d-today").textContent = data.today || 0;
+  $("demo-range").textContent = data.oldest_ts
+    ? "— since " + new Date(data.oldest_ts).toLocaleDateString() : "— no visits yet";
+
+  // Daily bar chart, scaled to the busiest day. Height as a % keeps it lib-free.
+  const series = data.series || [];
+  const max = series.reduce((m, d) => Math.max(m, d.visits), 0) || 1;
+  const bars = $("d-series"); bars.replaceChildren();
+  if (!series.length) { bars.innerHTML = '<span class="muted">No visits yet.</span>'; }
+  for (const d of series) {
+    const bar = document.createElement("div"); bar.className = "bar";
+    bar.title = d.date + ": " + d.visits + (d.visits === 1 ? " visit" : " visits");
+    const fill = document.createElement("i");
+    fill.style.height = Math.round((d.visits / max) * 100) + "%";
+    bar.appendChild(fill); bars.appendChild(bar);
+  }
+
+  fillBreak("d-countries", data.countries, "No visits yet.");
+  fillBreak("d-referrers", data.referrers, "No referred visits — all direct.");
+  fillBreak("d-sources", data.sources, "No campaign traffic.");
+  fillBreak("d-devices", data.devices, "No visits yet.");
+  fillBreak("d-browsers", data.browsers, "No visits yet.");
+  fillBreak("d-oses", data.oses, "No visits yet.");
+}
+
 async function loadStatus() {
   const data = await api("GET", "/v1/admin/users");
   const users = (data && data.users) || [];

@@ -40,6 +40,25 @@ Point your reverse proxy at `http://relayent-demo:8080` (the demo joins the shar
 | `DEMO_TARGET_USER` | yes | Whose bridge/subscription runs the jobs; must have a bridge online |
 | `DEMO_DEFAULT_BACKEND` | no | Pre-selected backend (default `cursor`) |
 | `DEMO_TITLE` | no | Page title/heading |
+| `DEMO_TRUST_PROXY` | no | `1` when behind a trusted proxy, so the visitor IP is read from `X-Forwarded-For` (analytics) |
+
+## Visitor analytics (admin-only)
+
+Each page view is reported to the relay as a **content-free** hit: the demo parses a coarse
+device/browser/OS family from the User-Agent, the referrer **host** (never the full URL), and any
+`utm_*` params, and sends them with the visitor IP. The relay turns the IP into a country (offline
+GeoIP) plus a daily-rotating hash and **discards it** — no raw IP or URL is ever stored. Obvious
+bots are skipped. The report is fire-and-forget: it never blocks or breaks the chat page.
+
+The admin sees the rollup — visits, unique visitors, per-day trend, and top countries / referrers /
+campaigns / devices / browsers / OSes — in the relay admin console under **Demo visitors**. There
+are no per-visitor rows, by design (same privacy posture as the audit log).
+
+To enable it:
+
+1. Issue the demo's app credential **with the `demo-stats` scope** (see `.env.example`).
+2. For accurate countries, point the relay at a GeoLite2 database via `RELAYENT_GEOIP_DB`. Without
+   it, everything still works and countries show as `??`.
 
 ## Offline behavior
 

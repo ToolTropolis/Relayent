@@ -41,6 +41,7 @@ type config struct {
 	targetUser string // whose bridge/subscription runs the jobs
 	defBackend string // pre-selected backend in the dropdown
 	title      string // page title / heading
+	trustProxy bool   // honour X-Forwarded-For for the visitor IP (only behind a trusted proxy)
 }
 
 func loadConfig() (config, error) {
@@ -51,6 +52,7 @@ func loadConfig() (config, error) {
 		targetUser: os.Getenv("DEMO_TARGET_USER"),
 		defBackend: envOr("DEMO_DEFAULT_BACKEND", "cursor"),
 		title:      envOr("DEMO_TITLE", "Relayent Playground"),
+		trustProxy: os.Getenv("DEMO_TRUST_PROXY") == "1",
 	}
 	if c.relayURL == "" || c.appCred == "" || c.targetUser == "" {
 		return c, fmt.Errorf("DEMO_RELAY_URL, DEMO_APP_CREDENTIAL and DEMO_TARGET_USER are all required")
