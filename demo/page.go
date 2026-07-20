@@ -38,6 +38,9 @@ func (s *server) handlePage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
+	// Record the visit (best-effort, backgrounded — never blocks the response).
+	s.reportVisit(r)
+
 	page := strings.ReplaceAll(demoHTML, "%NONCE%", n)
 	page = strings.ReplaceAll(page, "%TITLE%", htmlEscape(s.cfg.title))
 	_, _ = w.Write([]byte(page))

@@ -24,9 +24,10 @@ const (
 
 // Scopes gate what a principal may do. Kept minimal and explicit.
 const (
-	ScopeEnqueue = "enqueue" // POST /v1/jobs
-	ScopeClaim   = "claim"   // GET /v1/jobs/next, POST result, report capabilities
-	ScopeAdmin   = "admin"   // /v1/admin/*
+	ScopeEnqueue   = "enqueue"    // POST /v1/jobs
+	ScopeClaim     = "claim"      // GET /v1/jobs/next, POST result, report capabilities
+	ScopeAdmin     = "admin"      // /v1/admin/*
+	ScopeDemoStats = "demo-stats" // POST /v1/demo/hit — write a content-free visitor hit, nothing else
 )
 
 // Principal is the authenticated identity behind a request. It is produced by
