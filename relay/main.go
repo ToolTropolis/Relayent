@@ -31,12 +31,12 @@ import (
 )
 
 const (
-	maxBodyBytes    = 1 << 20 // 1 MiB request cap
-	defaultNextWait = 25 * time.Second
-	maxNextWait     = 55 * time.Second
-	fetchWait       = 90 * time.Second // how long GET /v1/jobs/{id} blocks for a result
-	jobTTL          = 10 * time.Minute
-	onlineWindow    = 40 * time.Second // bridge is "online" if it polled within this
+	defaultMaxBodyBytes = 1 << 20 // 1 MiB request cap, default
+	defaultNextWait     = 25 * time.Second
+	maxNextWait         = 55 * time.Second
+	defaultFetchWait    = 90 * time.Second // how long GET /v1/jobs/{id} blocks for a result, default
+	defaultJobTTL       = 10 * time.Minute
+	onlineWindow        = 40 * time.Second // bridge is "online" if it polled within this
 
 	// Rate limits. Auth failures are limited per client IP to make credential
 	// guessing impractical; the burst tolerates a human retyping a key.
@@ -49,6 +49,47 @@ const (
 	jobRatePerSec = 1.0 // 1 job/sec sustained
 	jobBurst      = 30.0
 )
+
+// maxBodyBytes, fetchWait, and jobTTL are env-tunable (RELAYENT_MAX_BODY_BYTES,
+// RELAYENT_FETCH_WAIT, RELAYENT_JOB_TTL) since the 1 MiB default is the single
+// biggest blocker to richer payloads (messages[], attachments, big prompts).
+// Rate limits stay compile-time consts deliberately — they're a security
+// control, not an ergonomics knob.
+var (
+	maxBodyBytes = envInt("RELAYENT_MAX_BODY_BYTES", defaultMaxBodyBytes)
+	fetchWait    = envDuration("RELAYENT_FETCH_WAIT", defaultFetchWait)
+	jobTTL       = envDuration("RELAYENT_JOB_TTL", defaultJobTTL)
+)
+
+// envInt parses an env var as a positive int, falling back to def if unset or
+// invalid.
+func envInt(k string, def int) int {
+	v := os.Getenv(k)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		log.Printf("[relayent-relay] %s=%q is invalid, using default %d", k, v, def)
+		return def
+	}
+	return n
+}
+
+// envDuration parses an env var (e.g. "90s", "10m") as a positive duration,
+// falling back to def if unset or invalid.
+func envDuration(k string, def time.Duration) time.Duration {
+	v := os.Getenv(k)
+	if v == "" {
+		return def
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		log.Printf("[relayent-relay] %s=%q is invalid, using default %s", k, v, def)
+		return def
+	}
+	return d
+}
 
 // Version is the relay build version, overridable at link time.
 var Version = "1.0.0"
@@ -800,7 +841,7 @@ func (s *server) postCapabilities(w http.ResponseWriter, r *http.Request, p *Pri
 // --- helpers ---
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxBodyBytes))
 	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(v); err != nil {
 		if err == io.EOF {
