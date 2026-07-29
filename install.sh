@@ -112,6 +112,18 @@ if [ "$found" -eq 0 ]; then
 fi
 
 # --- pair ---------------------------------------------------------------------
+# Non-interactive path: when the relay URL and a pairing key / enrolment token are
+# already supplied in the environment (e.g. copied from the admin onboard wizard),
+# skip the interactive wizard — the binary reads them from the environment and, if
+# the key is a one-time enrolment token, swaps it for a bound credential on first
+# run. Just report where the binary landed and how to start it.
+if [ -n "${RELAYENT_RELAY_URL:-}" ] && [ -n "${RELAYENT_PAIRING_KEY:-}" ]; then
+  ok "Installed $BIN_NAME to $target"
+  say "Relay and pairing key are set in the environment — start the bridge with:"
+  say "  RELAYENT_RELAY_URL=$RELAYENT_RELAY_URL RELAYENT_PAIRING_KEY=<token> $BIN_NAME"
+  exit 0
+fi
+
 printf '\n'
 say "Starting the pairing wizard…"
 exec "$target" setup
