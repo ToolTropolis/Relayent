@@ -41,6 +41,28 @@ func (a *ClaudeAdapter) Available() bool {
 	return err == nil
 }
 
+// authStatusJSON matches `claude auth status --json`'s envelope.
+type authStatusJSON struct {
+	LoggedIn bool `json:"loggedIn"`
+}
+
+// LoggedIn shells out to `claude auth status --json` and reads its loggedIn
+// field directly — no string-guessing needed, the CLI reports this as
+// structured JSON. ok is false only if the command itself couldn't be run or
+// its output couldn't be parsed (not a "logged out" signal).
+func (a *ClaudeAdapter) LoggedIn(ctx context.Context) (bool, bool) {
+	cmd := exec.CommandContext(ctx, a.Bin, "auth", "status", "--json")
+	out, err := cmd.Output()
+	if err != nil {
+		return false, false
+	}
+	var st authStatusJSON
+	if err := json.Unmarshal(out, &st); err != nil {
+		return false, false
+	}
+	return st.LoggedIn, true
+}
+
 // claudePrintJSON matches the envelope of `claude -p --output-format json`, whose
 // top-level object carries the assistant text in `result`.
 type claudePrintJSON struct {

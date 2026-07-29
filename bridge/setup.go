@@ -342,6 +342,8 @@ func RunSetup() error {
 			fmt.Printf("    · %-8s CLI not installed\n", b.Name)
 		case !b.Supported:
 			fmt.Printf("    · %-8s CLI found, adapter not implemented yet\n", b.Name)
+		default:
+			fmt.Printf("    · %-8s CLI found, not logged in\n", b.Name)
 		}
 	}
 	fmt.Println()
@@ -413,6 +415,8 @@ func RunDoctor() error {
 			fmt.Printf("    · %-8s CLI not installed\n", b.Name)
 		case !b.Supported:
 			fmt.Printf("    · %-8s CLI found, adapter not implemented yet\n", b.Name)
+		default:
+			fmt.Printf("    · %-8s CLI found, not logged in\n", b.Name)
 		}
 	}
 	fmt.Println()

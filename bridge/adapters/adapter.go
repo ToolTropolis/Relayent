@@ -65,3 +65,18 @@ type ModelLister interface {
 	// a hint, not a contract.
 	Models(ctx context.Context) (models []string, defaultModel string, probed bool)
 }
+
+// AuthChecker is implemented by adapters that can tell whether the CLI is
+// actually signed in, distinct from merely installed. None of the four CLIs
+// document a stable exit-code contract for "not authenticated", so each
+// implementation uses whatever signal it has (a config file's presence, or
+// parsing a status command's output) and is best-effort, not authoritative.
+// An adapter that cannot tell simply does not implement this, and Ready falls
+// back to Available() alone.
+type AuthChecker interface {
+	// LoggedIn reports whether the CLI appears to be authenticated. ok is
+	// false when the check itself could not be performed (e.g. the status
+	// command errored for a reason other than "not logged in") — callers
+	// should not treat !ok as "not logged in".
+	LoggedIn(ctx context.Context) (loggedIn bool, ok bool)
+}

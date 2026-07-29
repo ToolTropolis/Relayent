@@ -36,12 +36,28 @@ func NewGeminiAdapter() *GeminiAdapter {
 
 func (a *GeminiAdapter) Name() string { return "gemini" }
 
-// Available reports whether the CLI is installed. (Login is checked at run time —
-// like the other adapters, an installed-but-logged-out CLI fails the job with the
-// CLI's own error rather than being hidden here.)
+// Available reports whether the CLI is installed. See LoggedIn for auth state.
 func (a *GeminiAdapter) Available() bool {
 	_, err := exec.LookPath(a.Bin)
 	return err == nil
+}
+
+// LoggedIn checks for gemini-cli's OAuth credentials file. The path is well
+// documented and stable, unlike the CLI's auth subcommands (still in flux
+// upstream), so a file check is the more reliable signal here.
+func (a *GeminiAdapter) LoggedIn(ctx context.Context) (bool, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false, false
+	}
+	_, err = os.Stat(home + "/.gemini/oauth_creds.json")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, true
+		}
+		return false, false
+	}
+	return true, true
 }
 
 func (a *GeminiAdapter) Run(ctx context.Context, req Request) (Result, error) {
@@ -56,14 +72,18 @@ func (a *GeminiAdapter) Run(ctx context.Context, req Request) (Result, error) {
 		prompt += "\n\nReturn ONLY a valid JSON object, no markdown fences, no commentary."
 	}
 
-	// -p passes the prompt; --output-format json returns a structured envelope we
-	// unwrap below. -m selects a model when the caller named one.
-	args := []string{"-p", prompt, "--output-format", "json"}
+	// The prompt goes on stdin, not as a -p arg — the CLI's own help documents
+	// -p's value as "appended to input on stdin (if any)", and passing a large
+	// prompt as an arg would hit the OS ARG_MAX ceiling. --output-format json
+	// returns a structured envelope we unwrap below. -m selects a model when
+	// the caller named one.
+	args := []string{"--output-format", "json"}
 	if req.Model != "" {
 		args = append(args, "-m", req.Model)
 	}
 
 	cmd := exec.CommandContext(ctx, a.Bin, args...)
+	cmd.Stdin = strings.NewReader(prompt)
 	// Run in the bridge's sandbox, never the inherited cwd — see Request.WorkDir.
 	cmd.Dir = req.WorkDir
 	cmd.Env = os.Environ()

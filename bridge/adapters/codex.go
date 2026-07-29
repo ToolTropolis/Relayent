@@ -39,6 +39,29 @@ func (a *CodexAdapter) Available() bool {
 	return err == nil
 }
 
+// LoggedIn checks for the presence of Codex's own auth file rather than
+// shelling out — cheap, and the path is well documented, unlike the other
+// three CLIs. ok is false only if we can't even stat $HOME (a genuine local
+// error, not a "logged out" signal).
+func (a *CodexAdapter) LoggedIn(ctx context.Context) (bool, bool) {
+	dir := os.Getenv("CODEX_HOME")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false, false
+		}
+		dir = home + "/.codex"
+	}
+	_, err := os.Stat(dir + "/auth.json")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, true
+		}
+		return false, false
+	}
+	return true, true
+}
+
 func (a *CodexAdapter) Run(ctx context.Context, req Request) (Result, error) {
 	// `codex exec -` reads the prompt from stdin and runs non-interactively.
 	args := []string{"exec"}

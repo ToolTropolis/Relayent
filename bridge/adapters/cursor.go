@@ -45,6 +45,27 @@ func (a *CursorAdapter) Available() bool {
 	return err == nil
 }
 
+// cursorStatusJSON matches `cursor-agent status --format json`'s envelope.
+type cursorStatusJSON struct {
+	IsAuthenticated bool `json:"isAuthenticated"`
+}
+
+// LoggedIn shells out to `cursor-agent status --format json` and reads its
+// isAuthenticated field directly. ok is false only if the command itself
+// couldn't be run or its output couldn't be parsed.
+func (a *CursorAdapter) LoggedIn(ctx context.Context) (bool, bool) {
+	cmd := exec.CommandContext(ctx, a.Bin, "status", "--format", "json")
+	out, err := cmd.Output()
+	if err != nil {
+		return false, false
+	}
+	var st cursorStatusJSON
+	if err := json.Unmarshal(out, &st); err != nil {
+		return false, false
+	}
+	return st.IsAuthenticated, true
+}
+
 // cursorPrintJSON matches the envelope of `cursor-agent -p --output-format json`.
 type cursorPrintJSON struct {
 	Type    string `json:"type"`
@@ -80,10 +101,11 @@ func (a *CursorAdapter) run(ctx context.Context, req Request, retry bool) (Resul
 			" to this JSON Schema. No prose, no explanation, no markdown code fences —" +
 			" output raw JSON and nothing else.\nJSON Schema:\n" + string(schemaJSON)
 	}
-	// cursor-agent takes the prompt as an argument, not on stdin.
-	args = append(args, prompt)
-
+	// cursor-agent reads the prompt from stdin when no positional prompt arg is
+	// given (verified: `echo "..." | cursor-agent -p ...` works). Passing it as
+	// an arg instead would hit the OS ARG_MAX ceiling on large prompts.
 	cmd := exec.CommandContext(ctx, a.Bin, args...)
+	cmd.Stdin = strings.NewReader(prompt)
 	// Run in the bridge's sandbox, never the inherited cwd — see Request.WorkDir.
 	cmd.Dir = req.WorkDir
 	// Do NOT inject CURSOR_API_KEY — the CLI uses its own subscription session.

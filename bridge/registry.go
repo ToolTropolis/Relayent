@@ -61,16 +61,28 @@ func (r *Registry) Available() []string {
 
 // Describe reports every known backend: whether its CLI is installed here, whether
 // the adapter is implemented, and whether it can actually run jobs (Ready).
-// The relay cannot see this machine, so the bridge is the source of truth. Every
-// registered adapter is now implemented (supported), so installed == ready == the
-// CLI being present; the fields are kept distinct for the wire contract.
+// The relay cannot see this machine, so the bridge is the source of truth.
+// Ready additionally requires a logged-in check to pass where the adapter can
+// tell (AuthChecker) — Installed alone does not guarantee jobs will succeed.
 func (r *Registry) Describe(ctx context.Context) []api.BackendInfo {
 	out := make([]api.BackendInfo, 0, len(r.adapters))
 	for name, a := range r.adapters {
-		ready := a.Available() // the CLI is present
+		installed := a.Available()
+		ready := installed
+		// Installed is not the same as usable: a CLI that's present but not
+		// signed in will fail every job. Only downgrade Ready when the check
+		// itself succeeded (ok) — an inconclusive check must not hide a
+		// backend that's actually fine.
+		if installed {
+			if ac, ok := a.(adapters.AuthChecker); ok {
+				if loggedIn, checked := ac.LoggedIn(ctx); checked && !loggedIn {
+					ready = false
+				}
+			}
+		}
 		info := api.BackendInfo{
 			Name:      name,
-			Installed: ready,
+			Installed: installed,
 			Supported: true,
 			Ready:     ready,
 		}
