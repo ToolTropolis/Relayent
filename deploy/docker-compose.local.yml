@@ -1,0 +1,58 @@
+# Relayent relay — bare localhost, no proxy, no TLS.
+#
+# Primary author: Navjyot Nishant
+# Created on: 2026-07-29
+# Description: Runs the relay standalone for local development — publishes
+#   127.0.0.1:8787 directly, no Caddy (docker-compose.yml) and no external
+#   proxy network (docker-compose.behind-proxy.yml). Use this to test the
+#   admin console and API against a real container instead of a bare
+#   `go build` binary.
+#
+# QUICK START
+#   1. cp .env.local.example .env
+#   2. docker compose -f docker-compose.local.yml run --rm relay keygen
+#   3. Put that key (and an admin token, same command) in .env
+#   4. docker compose -f docker-compose.local.yml up -d --build
+
+services:
+  relayent-data-init:
+    image: busybox:1.36
+    command: ["chown", "-R", "65532:65532", "/data"]
+    volumes:
+      - relayent-local-data:/data
+    restart: "no"
+
+  relay:
+    build:
+      context: ..
+      dockerfile: relay/Dockerfile
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      RELAYENT_LISTEN: ":8787"
+      RELAYENT_PAIRING_KEY: ${RELAYENT_PAIRING_KEY:-}
+      RELAYENT_DATA_DIR: /data
+      RELAYENT_ADMIN_TOKEN: ${RELAYENT_ADMIN_TOKEN:-}
+      RELAYENT_SESSION_KEY: ${RELAYENT_SESSION_KEY:-}
+      RELAYENT_OIDC_ISSUER: ${RELAYENT_OIDC_ISSUER:-}
+      RELAYENT_OIDC_CLIENT_ID: ${RELAYENT_OIDC_CLIENT_ID:-}
+      RELAYENT_OIDC_CLIENT_SECRET: ${RELAYENT_OIDC_CLIENT_SECRET:-}
+      RELAYENT_OIDC_REDIRECT_URL: ${RELAYENT_OIDC_REDIRECT_URL:-}
+      RELAYENT_OIDC_HOSTED_DOMAIN: ${RELAYENT_OIDC_HOSTED_DOMAIN:-}
+      RELAYENT_GEOIP_DB: ${RELAYENT_GEOIP_DB:-}
+      RELAYENT_MAX_BODY_BYTES: ${RELAYENT_MAX_BODY_BYTES:-}
+      RELAYENT_FETCH_WAIT: ${RELAYENT_FETCH_WAIT:-}
+      RELAYENT_JOB_TTL: ${RELAYENT_JOB_TTL:-}
+    volumes:
+      - relayent-local-data:/data
+    depends_on:
+      relayent-data-init:
+        condition: service_completed_successfully
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  relayent-local-data:
+    name: relayent-local-data
