@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 12 1200 626" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="grn" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2f9e44"/>
+    </marker>
+  </defs>
+  <style>
+    .title   { font-size: 22px; font-weight: 700; fill: #1e293b; }
+    .sub     { font-size: 13.5px; fill: #64748b; }
+    .row-tag { font-size: 12px; font-weight: 700; letter-spacing: .06em; }
+    .label   { font-size: 15px; font-weight: 700; }
+    .sublbl  { font-size: 11px; fill: #64748b; }
+    .enc     { font-size: 11.5px; font-weight: 700; fill: #2f9e44; }
+    .enc-s   { font-size: 10px; fill: #2f9e44; }
+    .relay-now { font-size: 11px; fill: #9a3412; }
+    .relay-fix { font-size: 11px; fill: #15803d; }
+    .strip-t { font-size: 14px; font-weight: 700; fill: #15803d; }
+    .strip   { font-size: 12.5px; fill: #166534; }
+    .foot    { font-size: 11px; fill: #94a3b8; }
+    .plan-b  { font-size: 10.5px; font-weight: 700; fill: #15803d; }
+  </style>
+
+  <rect x="0" y="0" width="1200" height="640" fill="#ffffff"/>
+
+  <text x="600" y="38" text-anchor="middle" class="title">Where your data is protected — and where it's going</text>
+  <text x="600" y="61" text-anchor="middle" class="sub">Encrypted in transit today; end-to-end encryption through the relay is the planned next step</text>
+
+  <!-- ============================================================= -->
+  <!-- ROW 1 — TODAY (amber relay, plaintext)                        -->
+  <!-- ============================================================= -->
+  <text x="40" y="112" class="row-tag" fill="#b45309">TODAY</text>
+  <line x1="105" y1="107" x2="1160" y2="107" stroke="#f1d9c0" stroke-width="1"/>
+
+  <!-- App icon: browser window -->
+  <g transform="translate(70,140)">
+    <rect x="0" y="0" width="104" height="76" rx="9" fill="#e7f0ff" stroke="#2563eb" stroke-width="2.5"/>
+    <path d="M0 22 h104" stroke="#2563eb" stroke-width="2.5"/>
+    <circle cx="13" cy="11" r="2.6" fill="#2563eb"/>
+    <circle cx="24" cy="11" r="2.6" fill="#2563eb"/>
+    <circle cx="35" cy="11" r="2.6" fill="#2563eb"/>
+    <rect x="14" y="36" width="52" height="6" rx="3" fill="#93b4f5"/>
+    <rect x="14" y="50" width="76" height="6" rx="3" fill="#c3d6fb"/>
+  </g>
+  <text x="122" y="238" text-anchor="middle" class="label" fill="#2563eb">Your app</text>
+  <text x="122" y="255" text-anchor="middle" class="sublbl">sends prompts, reads results</text>
+
+  <!-- Relay icon: routing hub (server with in/out ports) — amber -->
+  <g transform="translate(508,132)">
+    <rect x="0" y="0" width="184" height="92" rx="11" fill="#fff4e6" stroke="#b45309" stroke-width="2.5"/>
+    <!-- server rails -->
+    <rect x="20" y="18" width="144" height="22" rx="5" fill="#ffe8cc" stroke="#b45309" stroke-width="1.6"/>
+    <rect x="20" y="50" width="144" height="22" rx="5" fill="#ffe8cc" stroke="#b45309" stroke-width="1.6"/>
+    <circle cx="33" cy="29" r="3" fill="#b45309"/>
+    <circle cx="33" cy="61" r="3" fill="#b45309"/>
+    <path d="M46 29 h30 M46 61 h30" stroke="#b45309" stroke-width="2.4"/>
+    <!-- routing arrows in/out -->
+    <path d="M96 29 l24 0 m-6 -5 l6 5 l-6 5" stroke="#b45309" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M144 61 l-24 0 m6 -5 l-6 5 l6 5" stroke="#b45309" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="600" y="246" text-anchor="middle" class="label" fill="#b45309">The relay</text>
+  <text x="600" y="264" text-anchor="middle" class="relay-now" font-weight="700">sees prompts + results in the clear</text>
+  <text x="600" y="280" text-anchor="middle" class="relay-now">the operator could read them — today</text>
+
+  <!-- Bridge icon: suspension-bridge span -->
+  <g transform="translate(1026,150)" stroke="#15803d" stroke-width="2.5" fill="none" stroke-linecap="round">
+    <!-- deck -->
+    <path d="M0 52 h104"/>
+    <!-- towers -->
+    <path d="M26 52 v-40 M78 52 v-40"/>
+    <!-- main cables -->
+    <path d="M0 40 Q26 6 52 40 Q78 6 104 40"/>
+    <!-- hangers -->
+    <path d="M13 47 v-13 M39 47 v-11 M65 47 v-11 M91 47 v-13" stroke-width="1.6"/>
+  </g>
+  <text x="1078" y="238" text-anchor="middle" class="label" fill="#15803d">Your bridge</text>
+  <text x="1078" y="255" text-anchor="middle" class="sublbl">on your CLI · dials OUT, no inbound ports</text>
+
+  <!-- TLS hops (row 1) -->
+  <path d="M184 178 L496 178" stroke="#2f9e44" stroke-width="3" fill="none" marker-end="url(#grn)"/>
+  <text x="340" y="164" text-anchor="middle" class="enc">🔒 TLS-encrypted</text>
+  <text x="340" y="196" text-anchor="middle" class="enc-s">in transit</text>
+  <path d="M1016 178 L704 178" stroke="#2f9e44" stroke-width="3" fill="none" marker-end="url(#grn)"/>
+  <text x="860" y="164" text-anchor="middle" class="enc">🔒 TLS-encrypted</text>
+  <text x="860" y="196" text-anchor="middle" class="enc-s">in transit</text>
+
+  <!-- ============================================================= -->
+  <!-- ROW 2 — PLANNED E2E (green relay, sealed)                     -->
+  <!-- ============================================================= -->
+  <text x="40" y="336" class="row-tag" fill="#15803d">PLANNED · END-TO-END</text>
+  <rect x="232" y="326" width="166" height="16" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/>
+  <text x="315" y="337" text-anchor="middle" class="plan-b">rolling out — see design note</text>
+  <line x1="410" y1="334" x2="1160" y2="334" stroke="#cfe9d2" stroke-width="1"/>
+
+  <!-- App icon (same) -->
+  <g transform="translate(70,366)">
+    <rect x="0" y="0" width="104" height="76" rx="9" fill="#e7f0ff" stroke="#2563eb" stroke-width="2.5"/>
+    <path d="M0 22 h104" stroke="#2563eb" stroke-width="2.5"/>
+    <circle cx="13" cy="11" r="2.6" fill="#2563eb"/>
+    <circle cx="24" cy="11" r="2.6" fill="#2563eb"/>
+    <circle cx="35" cy="11" r="2.6" fill="#2563eb"/>
+    <rect x="14" y="36" width="52" height="6" rx="3" fill="#93b4f5"/>
+    <rect x="14" y="50" width="76" height="6" rx="3" fill="#c3d6fb"/>
+  </g>
+  <text x="122" y="464" text-anchor="middle" class="label" fill="#2563eb">Your app</text>
+  <text x="122" y="481" text-anchor="middle" class="sublbl">seals the prompt to the bridge</text>
+
+  <!-- Relay icon: routing hub — GREEN, with padlock (sealed / blind router) -->
+  <g transform="translate(508,358)">
+    <rect x="0" y="0" width="184" height="92" rx="11" fill="#eefbf1" stroke="#15803d" stroke-width="2.5"/>
+    <rect x="20" y="18" width="144" height="22" rx="5" fill="#d6f5df" stroke="#15803d" stroke-width="1.6"/>
+    <rect x="20" y="50" width="144" height="22" rx="5" fill="#d6f5df" stroke="#15803d" stroke-width="1.6"/>
+    <circle cx="33" cy="29" r="3" fill="#15803d"/>
+    <circle cx="33" cy="61" r="3" fill="#15803d"/>
+    <path d="M46 29 h30 M46 61 h30" stroke="#15803d" stroke-width="2.4"/>
+    <path d="M96 29 l24 0 m-6 -5 l6 5 l-6 5" stroke="#15803d" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M144 61 l-24 0 m6 -5 l-6 5 l6 5" stroke="#15803d" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- padlock badge -->
+    <g transform="translate(150,-10)">
+      <rect x="0" y="6" width="26" height="20" rx="4" fill="#15803d"/>
+      <path d="M5 6 v-4 a8 8 0 0 1 16 0 v4" fill="none" stroke="#15803d" stroke-width="2.6"/>
+      <circle cx="13" cy="15" r="2.6" fill="#eefbf1"/>
+    </g>
+  </g>
+  <text x="600" y="472" text-anchor="middle" class="label" fill="#15803d">The relay</text>
+  <text x="600" y="490" text-anchor="middle" class="relay-fix" font-weight="700">routes sealed ciphertext — can't read it</text>
+  <text x="600" y="506" text-anchor="middle" class="relay-fix">only routing metadata: who, which job, backend</text>
+
+  <!-- Bridge icon (same span) -->
+  <g transform="translate(1026,376)" stroke="#15803d" stroke-width="2.5" fill="none" stroke-linecap="round">
+    <path d="M0 52 h104"/>
+    <path d="M26 52 v-40 M78 52 v-40"/>
+    <path d="M0 40 Q26 6 52 40 Q78 6 104 40"/>
+    <path d="M13 47 v-13 M39 47 v-11 M65 47 v-11 M91 47 v-13" stroke-width="1.6"/>
+  </g>
+  <text x="1078" y="464" text-anchor="middle" class="label" fill="#15803d">Your bridge</text>
+  <text x="1078" y="481" text-anchor="middle" class="sublbl">the only place that can decrypt it</text>
+
+  <!-- Sealed hops (row 2) -->
+  <path d="M184 404 L496 404" stroke="#2f9e44" stroke-width="3" fill="none" marker-end="url(#grn)"/>
+  <text x="340" y="390" text-anchor="middle" class="enc">🔒 sealed to bridge key</text>
+  <text x="340" y="422" text-anchor="middle" class="enc-s">ciphertext end-to-end</text>
+  <path d="M1016 404 L704 404" stroke="#2f9e44" stroke-width="3" fill="none" marker-end="url(#grn)"/>
+  <text x="860" y="390" text-anchor="middle" class="enc">🔒 sealed to app key</text>
+  <text x="860" y="422" text-anchor="middle" class="enc-s">ciphertext end-to-end</text>
+
+  <!-- ============================================================= -->
+  <!-- Protected strip                                               -->
+  <!-- ============================================================= -->
+  <rect x="70" y="536" width="1060" height="66" rx="12" fill="#eefbf1" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="92" y="561" class="strip-t">What the relay protects today</text>
+  <text x="92" y="583" class="strip">✓ Bridge dials out only  ·  ✓ No CLI credentials through the relay  ·  ✓ Constant-time pairing key</text>
+  <text x="92" y="600" class="strip">✓ OIDC sign-in, no passwords at rest  ·  ✓ Machine credentials hashed  ·  ✓ Per-user isolation, enforced &amp; tested</text>
+
+  <text x="600" y="628" text-anchor="middle" class="foot">Today: isolation is authorization, not encryption — don't send secrets through a relay you don't trust. Planned E2E (relay routes ciphertext only) is in docs/design/e2e-payload-encryption.md.</text>
+</svg>

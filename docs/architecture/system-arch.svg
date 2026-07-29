@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 12 1200 596" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arB" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arG" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2f9e44"/>
+    </marker>
+    <marker id="arA" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
+    </marker>
+  </defs>
+  <style>
+    .title    { font-size: 22px; font-weight: 700; fill: #1e293b; }
+    .sub       { font-size: 13.5px; fill: #64748b; }
+    .col-label { font-size: 12px; font-weight: 700; letter-spacing: .06em; fill: #94a3b8; }
+    .label     { font-size: 15px; font-weight: 700; }
+    .sublbl    { font-size: 11px; fill: #64748b; }
+    .code      { font-size: 10.5px; font-family: "SF Mono", Menlo, Consolas, monospace; fill: #475569; }
+    .e-label   { font-size: 10.5px; font-weight: 700; }
+    .stage     { font-size: 11px; font-weight: 700; fill: #b45309; }
+    .stage-s   { font-size: 10px; fill: #9a3412; }
+    .guard-t   { font-size: 12px; font-weight: 700; fill: #b45309; }
+    .block     { font-size: 11px; font-weight: 700; fill: #c0392b; }
+    .foot      { font-size: 11px; fill: #94a3b8; }
+    .move-t    { font-size: 12.5px; font-weight: 700; fill: #1e293b; }
+    .move      { font-size: 11.5px; fill: #475569; }
+  </style>
+
+  <rect x="0" y="0" width="1200" height="620" fill="#ffffff"/>
+
+  <text x="600" y="40" text-anchor="middle" class="title">Keeping tenants apart on one shared relay</text>
+  <text x="600" y="63" text-anchor="middle" class="sub">Auth decides who you are; the queue routes purely on that identity — so a job runs only on its owner's bridge</text>
+
+  <!-- column labels -->
+  <text x="122" y="108" text-anchor="middle" class="col-label">CONSUMER</text>
+  <text x="600" y="108" text-anchor="middle" class="col-label">THE RELAY — THE ONLY PUBLIC COMPONENT</text>
+  <text x="1062" y="108" text-anchor="middle" class="col-label">EACH USER'S OWN MACHINE</text>
+
+  <!-- ============ APP (browser-window icon) ============ -->
+  <g transform="translate(70,232)">
+    <rect x="0" y="0" width="104" height="76" rx="9" fill="#e7f0ff" stroke="#2563eb" stroke-width="2.5"/>
+    <path d="M0 22 h104" stroke="#2563eb" stroke-width="2.5"/>
+    <circle cx="13" cy="11" r="2.6" fill="#2563eb"/>
+    <circle cx="24" cy="11" r="2.6" fill="#2563eb"/>
+    <circle cx="35" cy="11" r="2.6" fill="#2563eb"/>
+    <rect x="14" y="36" width="52" height="6" rx="3" fill="#93b4f5"/>
+    <rect x="14" y="50" width="76" height="6" rx="3" fill="#c3d6fb"/>
+  </g>
+  <text x="122" y="330" text-anchor="middle" class="label" fill="#2563eb">App</text>
+  <text x="122" y="347" text-anchor="middle" class="sublbl">enqueues a job for a user</text>
+  <text x="122" y="363" text-anchor="middle" class="code">target_user=alice</text>
+
+  <!-- ============ RELAY (routing-hub icon, amber) with two internal stages ============ -->
+  <g transform="translate(432,214)">
+    <!-- hub server body -->
+    <rect x="0" y="0" width="336" height="112" rx="12" fill="#fff8f0" stroke="#b45309" stroke-width="2.5"/>
+
+    <!-- Stage 1: Auth -->
+    <rect x="20" y="22" width="140" height="68" rx="8" fill="#fff4e6" stroke="#b45309" stroke-width="1.8"/>
+    <!-- key glyph for auth (top-left, clear of text) -->
+    <g transform="translate(30,32)" stroke="#b45309" stroke-width="1.8" fill="none">
+      <circle cx="5" cy="5" r="4.2"/>
+      <path d="M8.5 8 l9 9 m-3 -3 l3 3 m-6 1 l3 -3" stroke-linecap="round"/>
+    </g>
+    <text x="94" y="46" text-anchor="middle" class="stage">Auth</text>
+    <text x="90" y="62" text-anchor="middle" class="stage-s">verifies who you are</text>
+    <text x="90" y="79" text-anchor="middle" class="code" font-size="9.5" fill="#b45309">→ Principal{UserID}</text>
+
+    <!-- Stage 2: Queue -->
+    <rect x="176" y="22" width="140" height="68" rx="8" fill="#fff4e6" stroke="#b45309" stroke-width="1.8"/>
+    <!-- stacked-lanes glyph for queue (top-left) -->
+    <g transform="translate(186,32)" stroke="#b45309" stroke-width="1.8">
+      <path d="M0 0 h13 M0 6 h13 M0 12 h8"/>
+    </g>
+    <text x="250" y="46" text-anchor="middle" class="stage">Job queue</text>
+    <text x="246" y="62" text-anchor="middle" class="stage-s">routes only on UserID</text>
+    <text x="246" y="79" text-anchor="middle" class="stage-s" font-size="9" font-style="italic">in-memory · nothing at rest</text>
+
+    <!-- internal arrow auth -> queue -->
+    <path d="M160 56 l16 0 m-5 -4 l5 4 l-5 4" stroke="#b45309" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="600" y="346" text-anchor="middle" class="label" fill="#b45309">The relay</text>
+  <text x="600" y="363" text-anchor="middle" class="sublbl">identity, not a shared namespace — one public component</text>
+
+  <!-- The one guard (annotation, under the relay) -->
+  <rect x="432" y="392" width="336" height="46" rx="8" fill="#fff5f0" stroke="#b45309" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="600" y="412" text-anchor="middle" class="guard-t">The one guard that enforces isolation</text>
+  <text x="600" y="429" text-anchor="middle" class="code" font-size="11">if jobUser[id] != userID { reject }  — at every op</text>
+
+  <!-- ============ BRIDGES (suspension-span icons, green) ============ -->
+  <!-- alice -->
+  <g transform="translate(1010,214)" stroke="#15803d" stroke-width="2.5" fill="none" stroke-linecap="round">
+    <path d="M0 52 h104"/>
+    <path d="M26 52 v-40 M78 52 v-40"/>
+    <path d="M0 40 Q26 6 52 40 Q78 6 104 40"/>
+    <path d="M13 47 v-13 M39 47 v-11 M65 47 v-11 M91 47 v-13" stroke-width="1.6"/>
+  </g>
+  <text x="1062" y="300" text-anchor="middle" class="label" fill="#15803d">Bridge — alice</text>
+  <text x="1062" y="317" text-anchor="middle" class="sublbl">polls alice's jobs · runs on alice's CLI</text>
+
+  <!-- bob -->
+  <g transform="translate(1010,470)" stroke="#15803d" stroke-width="2.5" fill="none" stroke-linecap="round">
+    <path d="M0 52 h104"/>
+    <path d="M26 52 v-40 M78 52 v-40"/>
+    <path d="M0 40 Q26 6 52 40 Q78 6 104 40"/>
+    <path d="M13 47 v-13 M39 47 v-11 M65 47 v-11 M91 47 v-13" stroke-width="1.6"/>
+  </g>
+  <text x="1062" y="556" text-anchor="middle" class="label" fill="#15803d">Bridge — bob</text>
+  <text x="1062" y="573" text-anchor="middle" class="sublbl">polls bob's jobs · runs on bob's CLI</text>
+
+  <!-- ============ EDGES ============ -->
+  <!-- App -> relay -->
+  <path d="M178 270 L420 270" fill="none" stroke="#2563eb" stroke-width="2.5" marker-end="url(#arB)"/>
+  <text x="299" y="258" text-anchor="middle" class="e-label" fill="#2563eb">POST /v1/jobs</text>
+
+  <!-- relay -> alice -->
+  <path d="M776 250 L1002 250" fill="none" stroke="#2f9e44" stroke-width="2.5" marker-end="url(#arG)"/>
+  <text x="889" y="238" text-anchor="middle" class="e-label" fill="#2f9e44">ClaimNext(alice)</text>
+
+  <!-- relay -> bob (down from guard band, across, up) -->
+  <path d="M700 438 L700 506 L1002 506" fill="none" stroke="#2f9e44" stroke-width="2.5" marker-end="url(#arG)"/>
+  <text x="852" y="496" text-anchor="middle" class="e-label" fill="#2f9e44">ClaimNext(bob)</text>
+
+  <!-- BLOCKED cross-lane between the two bridges -->
+  <path d="M1062 300 L1062 456" fill="none" stroke="#c0392b" stroke-width="2" stroke-dasharray="5 4" opacity="0.5"/>
+  <g transform="translate(1062,378)">
+    <circle r="15" fill="#fff" stroke="#c0392b" stroke-width="2"/>
+    <line x1="-7" y1="-7" x2="7" y2="7" stroke="#c0392b" stroke-width="3"/>
+    <line x1="7" y1="-7" x2="-7" y2="7" stroke="#c0392b" stroke-width="3"/>
+  </g>
+  <text x="1062" y="412" text-anchor="middle" class="block">alice's job can never</text>
+  <text x="1062" y="426" text-anchor="middle" class="block">reach bob's bridge</text>
+
+  <!-- ============ two-move summary, bottom-left ============ -->
+  <g transform="translate(70,478)">
+    <text x="0" y="0" class="move-t">The whole idea, in two moves</text>
+    <text x="0" y="22" class="move">1 · Auth decides identity; the queue routes on it —</text>
+    <text x="12" y="38" class="move">one key no longer means one shared namespace.</text>
+    <text x="0" y="60" class="move">2 · Every job op re-checks the owner, so a bridge</text>
+    <text x="12" y="76" class="move">only ever touches its own user's jobs.</text>
+  </g>
+
+  <text x="600" y="600" text-anchor="middle" class="foot">Relayent — one relay, N users, each on their own subscription: a job addressed to a user runs only on that user's bridge.</text>
+</svg>
