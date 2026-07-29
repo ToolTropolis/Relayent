@@ -221,10 +221,11 @@ func (a *oidcAuth) handleCallback(w http.ResponseWriter, r *http.Request) {
 	a.setSession(w, idToken.Subject)
 
 	// Redirect by effective role. UpsertUser preserves an existing user's role, so
-	// re-read it rather than trusting the bootstrap `role` computed above: an admin
-	// lands on the console, a regular user on their own status page.
+	// re-read it rather than trusting the bootstrap `role` computed above: any
+	// console role (admin/operator/viewer) lands on the console, a plain user on
+	// their own status page.
 	dest := "/"
-	if u, err := a.store.GetUser(idToken.Subject); err == nil && u.Role == RoleAdmin {
+	if u, err := a.store.GetUser(idToken.Subject); err == nil && IsConsoleRole(u.Role) {
 		dest = "/admin"
 	}
 	http.Redirect(w, r, dest, http.StatusFound)
@@ -289,11 +290,7 @@ func (a *oidcAuth) principalFromSession(r *http.Request) *Principal {
 	if err != nil || u.Disabled {
 		return nil
 	}
-	var scopes []string
-	if u.Role == RoleAdmin {
-		scopes = []string{ScopeAdmin}
-	}
-	return &Principal{UserID: sub, Kind: KindAdmin, Scopes: scopes, KeyFP: keyFingerprint(sub)}
+	return &Principal{UserID: sub, Kind: KindAdmin, Scopes: scopesForRole(u.Role), KeyFP: keyFingerprint(sub)}
 }
 
 // --- crypto helpers ---

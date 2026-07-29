@@ -23,12 +23,39 @@ const (
 )
 
 // Scopes gate what a principal may do. Kept minimal and explicit.
+//
+// Admin-console access is tiered (see RoleAdmin/RoleOperator/RoleViewer in
+// store.go). ScopeAdminView is the floor: it reaches every read-only endpoint
+// (Users list, Audit, Settings, Demo stats) and is granted to all three
+// console roles. The write scopes below gate one area each; a role's scope
+// set is computed by scopesForRole.
 const (
 	ScopeEnqueue   = "enqueue"    // POST /v1/jobs
 	ScopeClaim     = "claim"      // GET /v1/jobs/next, POST result, report capabilities
-	ScopeAdmin     = "admin"      // /v1/admin/*
+	ScopeAdmin     = "admin"      // full admin — every /v1/admin/* endpoint (bootstrap token, RoleAdmin)
+	ScopeAdminView = "admin-view" // read-only /v1/admin/* (all three console roles)
+	ScopeUsersEdit = "users-edit" // manage user role/disable/delete, mint enroll tokens (RoleAdmin only)
+	ScopeCredsEdit = "creds-edit" // create/revoke/delete app credentials (RoleAdmin, RoleOperator)
+	ScopeBridgesEdit = "bridges-edit" // revoke bridges (RoleAdmin, RoleOperator)
+	ScopeBackendsEdit = "backends-edit" // toggle backend enabled state (RoleAdmin, RoleOperator)
 	ScopeDemoStats = "demo-stats" // POST /v1/demo/hit — write a content-free visitor hit, nothing else
 )
+
+// scopesForRole computes a console principal's scopes from their role. Called
+// fresh on every request (principalFromSession re-reads the user), so a role
+// change or disable takes effect immediately, not at next login.
+func scopesForRole(role string) []string {
+	switch role {
+	case RoleAdmin:
+		return []string{ScopeAdmin, ScopeAdminView, ScopeUsersEdit, ScopeCredsEdit, ScopeBridgesEdit, ScopeBackendsEdit}
+	case RoleOperator:
+		return []string{ScopeAdminView, ScopeCredsEdit, ScopeBridgesEdit, ScopeBackendsEdit}
+	case RoleViewer:
+		return []string{ScopeAdminView}
+	default:
+		return nil
+	}
+}
 
 // Principal is the authenticated identity behind a request. It is produced by
 // the auth middleware and passed to every handler in place of the old raw key.
@@ -39,10 +66,11 @@ const (
 // exactly. KeyFP is a non-reversible fingerprint of the presented credential,
 // used for rate-limit bucketing and audit — never the secret itself.
 type Principal struct {
-	UserID string
-	Kind   string
-	Scopes []string
-	KeyFP  string
+	UserID   string
+	Kind     string
+	Scopes   []string
+	KeyFP    string
+	BridgeID string // set only for a user-bridge credential; empty for app/legacy
 }
 
 // Can reports whether the principal holds a scope.

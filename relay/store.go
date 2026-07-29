@@ -75,16 +75,30 @@ type User struct {
 	Sub         string    `json:"sub"` // OIDC subject — stable id (email can change, sub cannot)
 	Email       string    `json:"email"`
 	DisplayName string    `json:"display_name"`
-	Role        string    `json:"role"` // "admin" | "user"
+	Role        string    `json:"role"` // "admin" | "operator" | "viewer" | "user"
 	Disabled    bool      `json:"disabled"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
-// Roles.
+// Roles. "user" has no console access at all (their bridge runs their own
+// jobs). The other three are console-access tiers, narrowest to broadest:
+// viewer sees everything read-only; operator additionally manages app
+// credentials, bridges, and backends, but not other users; admin can do
+// everything, including user management.
 const (
-	RoleAdmin = "admin"
-	RoleUser  = "user"
+	RoleAdmin    = "admin"
+	RoleOperator = "operator"
+	RoleViewer   = "viewer"
+	RoleUser     = "user"
 )
+
+// ConsoleRoles are every role that may reach the admin console at all.
+var ConsoleRoles = []string{RoleAdmin, RoleOperator, RoleViewer}
+
+// IsConsoleRole reports whether role grants any admin-console access.
+func IsConsoleRole(role string) bool {
+	return role == RoleAdmin || role == RoleOperator || role == RoleViewer
+}
 
 // AppCred is a credential issued to a server-side consumer (e.g. EngageHub). It
 // authenticates the app and is scoped; the app names a target user per request.
@@ -252,14 +266,15 @@ func (s *Store) SetUserDisabled(sub string, disabled bool) error {
 	})
 }
 
-// SetUserRole changes a user's role (admin|user). Unlike UpsertUser — which
-// preserves an existing role so a normal login can't self-promote — this is the
-// explicit, admin-only path to grant or revoke admin.
+// SetUserRole changes a user's role (admin|operator|viewer|user). Unlike
+// UpsertUser — which preserves an existing role so a normal login can't
+// self-promote — this is the explicit, admin-only path to grant or revoke
+// console access and its tier.
 func (s *Store) SetUserRole(sub, role string) error {
 	if !s.Enabled() {
 		return nil
 	}
-	if role != RoleAdmin && role != RoleUser {
+	if role != RoleAdmin && role != RoleOperator && role != RoleViewer && role != RoleUser {
 		return fmt.Errorf("invalid role %q", role)
 	}
 	return s.db.Update(func(tx *bolt.Tx) error {
@@ -600,6 +615,9 @@ type AuditEvent struct {
 	Status    string    `json:"status"`     // done | error | ""
 	PromptLen int       `json:"prompt_len"` // BYTE COUNT only — never the bytes
 	ResultLen int       `json:"result_len"` // BYTE COUNT only — never the bytes
+	BridgeID  string    `json:"bridge_id,omitempty"` // which bridge served this, when known
+	Host      string    `json:"host,omitempty"`      // best-effort: the actor's last-reported hostname
+	Version   string    `json:"version,omitempty"`   // best-effort: the actor's last-reported bridge version
 }
 
 // Audit events.

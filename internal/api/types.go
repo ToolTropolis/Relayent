@@ -184,12 +184,12 @@ type CreateUserRequest struct {
 	Sub         string `json:"sub"`
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name,omitempty"`
-	Role        string `json:"role,omitempty"` // "admin" | "user" (default user)
+	Role        string `json:"role,omitempty"` // "admin" | "operator" | "viewer" | "user" (default user)
 }
 
-// SetUserRoleRequest grants or revokes admin for an existing user.
+// SetUserRoleRequest changes an existing user's console-access role.
 type SetUserRoleRequest struct {
-	Role string `json:"role"` // "admin" | "user"
+	Role string `json:"role"` // "admin" | "operator" | "viewer" | "user"
 }
 
 // AdminBridge is one enrolled bridge binding as shown on the admin surface. The

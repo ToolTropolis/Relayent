@@ -51,6 +51,15 @@ func TestSetUserRole(t *testing.T) {
 	if err := s.SetUserRole("missing", RoleAdmin); err != ErrNotFound {
 		t.Fatalf("SetUserRole on missing user = %v, want ErrNotFound", err)
 	}
+	// operator and viewer are valid console-role tiers, not just admin/user.
+	for _, r := range []string{RoleOperator, RoleViewer} {
+		if err := s.SetUserRole("u1", r); err != nil {
+			t.Fatalf("SetUserRole(%q): %v", r, err)
+		}
+		if u, _ := s.GetUser("u1"); u.Role != r {
+			t.Fatalf("role = %q, want %q", u.Role, r)
+		}
+	}
 }
 
 // DeleteUser removes the record; CountUsers reflects it.

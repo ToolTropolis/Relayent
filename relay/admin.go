@@ -69,7 +69,7 @@ func (s *server) adminCreateUser(w http.ResponseWriter, r *http.Request, p *Prin
 		return
 	}
 	role := req.Role
-	if role != RoleAdmin {
+	if role != RoleAdmin && role != RoleOperator && role != RoleViewer {
 		role = RoleUser
 	}
 	if err := s.store.UpsertUser(User{
@@ -93,18 +93,19 @@ func (s *server) adminSetUserDisabled(w http.ResponseWriter, r *http.Request, p 
 	writeJSON(w, http.StatusOK, map[string]any{"sub": sub, "disabled": disabled})
 }
 
-// adminSetUserRole grants or revokes admin. Body: {"role":"admin"|"user"}. This
-// is the only path that changes a role — a normal OIDC login can't self-promote,
-// since UpsertUser preserves an existing role. An admin cannot demote themselves,
-// so the deployment can't be locked out of its last admin by accident.
+// adminSetUserRole grants or revokes admin-console access. Body:
+// {"role":"admin"|"operator"|"viewer"|"user"}. This is the only path that
+// changes a role — a normal OIDC login can't self-promote, since UpsertUser
+// preserves an existing role. An admin cannot demote themselves, so the
+// deployment can't be locked out of its last admin by accident.
 func (s *server) adminSetUserRole(w http.ResponseWriter, r *http.Request, p *Principal) {
 	sub := r.PathValue("sub")
 	var req api.SetUserRoleRequest
 	if !decode(w, r, &req) {
 		return
 	}
-	if req.Role != RoleAdmin && req.Role != RoleUser {
-		writeErr(w, http.StatusBadRequest, "role must be \"admin\" or \"user\"")
+	if req.Role != RoleAdmin && req.Role != RoleOperator && req.Role != RoleViewer && req.Role != RoleUser {
+		writeErr(w, http.StatusBadRequest, "role must be \"admin\", \"operator\", \"viewer\", or \"user\"")
 		return
 	}
 	if sub == p.UserID && req.Role != RoleAdmin {

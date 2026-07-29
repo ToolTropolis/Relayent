@@ -63,6 +63,49 @@ func TestSessionUserHasNoAdminScope(t *testing.T) {
 	}
 }
 
+// An operator can reach the console and manage creds/bridges/backends, but
+// must never gain user-management scope — that stays admin-only.
+func TestSessionOperatorScopes(t *testing.T) {
+	a := testOIDC(t)
+	a.store.UpsertUser(User{Sub: "sub-op", Email: "o@x.com", Role: RoleOperator})
+	rec := httptest.NewRecorder()
+	a.setSession(rec, "sub-op")
+	req := httptest.NewRequest("GET", "/", nil)
+	req.AddCookie(rec.Result().Cookies()[0])
+	p := a.principalFromSession(req)
+	if p == nil {
+		t.Fatal("operator session should resolve to a principal")
+	}
+	if !p.Can(ScopeAdminView) || !p.Can(ScopeCredsEdit) || !p.Can(ScopeBridgesEdit) || !p.Can(ScopeBackendsEdit) {
+		t.Error("operator must have admin-view + creds/bridges/backends edit scopes")
+	}
+	if p.Can(ScopeAdmin) || p.Can(ScopeUsersEdit) {
+		t.Error("operator must NOT have full admin scope or user-management scope")
+	}
+}
+
+// A viewer can reach the console read-only and must hold no write scope at all.
+func TestSessionViewerIsReadOnly(t *testing.T) {
+	a := testOIDC(t)
+	a.store.UpsertUser(User{Sub: "sub-view", Email: "v2@x.com", Role: RoleViewer})
+	rec := httptest.NewRecorder()
+	a.setSession(rec, "sub-view")
+	req := httptest.NewRequest("GET", "/", nil)
+	req.AddCookie(rec.Result().Cookies()[0])
+	p := a.principalFromSession(req)
+	if p == nil {
+		t.Fatal("viewer session should resolve to a principal")
+	}
+	if !p.Can(ScopeAdminView) {
+		t.Error("viewer must be able to reach read-only admin endpoints")
+	}
+	for _, s := range []string{ScopeAdmin, ScopeUsersEdit, ScopeCredsEdit, ScopeBridgesEdit, ScopeBackendsEdit} {
+		if p.Can(s) {
+			t.Errorf("viewer must not hold write scope %q", s)
+		}
+	}
+}
+
 // A tampered cookie must be rejected — this is the core security property.
 func TestSessionTamperRejected(t *testing.T) {
 	a := testOIDC(t)
