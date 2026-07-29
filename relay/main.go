@@ -199,23 +199,23 @@ func main() {
 
 	// Admin surface — every route requires the admin scope (an OIDC admin
 	// session). A non-admin principal gets 403; an unauthenticated one gets 401.
-	mux.HandleFunc("GET /v1/admin/users", srv.authorize(ScopeAdmin, srv.adminListUsers))
-	mux.HandleFunc("POST /v1/admin/users", srv.authorize(ScopeAdmin, srv.adminCreateUser))
-	mux.HandleFunc("POST /v1/admin/users/{sub}/disabled", srv.authorize(ScopeAdmin, srv.adminSetUserDisabled))
-	mux.HandleFunc("POST /v1/admin/users/{sub}/role", srv.authorize(ScopeAdmin, srv.adminSetUserRole))
-	mux.HandleFunc("DELETE /v1/admin/users/{sub}", srv.authorize(ScopeAdmin, srv.adminDeleteUser))
-	mux.HandleFunc("POST /v1/admin/enroll-tokens", srv.authorize(ScopeAdmin, srv.adminIssueEnrollToken))
-	mux.HandleFunc("GET /v1/admin/app-creds", srv.authorize(ScopeAdmin, srv.adminListAppCreds))
-	mux.HandleFunc("POST /v1/admin/app-creds", srv.authorize(ScopeAdmin, srv.adminCreateAppCred))
-	mux.HandleFunc("POST /v1/admin/app-creds/{id}/revoke", srv.authorize(ScopeAdmin, srv.adminRevokeAppCred))
-	mux.HandleFunc("DELETE /v1/admin/app-creds/{id}", srv.authorize(ScopeAdmin, srv.adminDeleteAppCred))
-	mux.HandleFunc("GET /v1/admin/audit", srv.authorize(ScopeAdmin, srv.adminAudit))
-	mux.HandleFunc("GET /v1/admin/config", srv.authorize(ScopeAdmin, srv.adminConfig))
-	mux.HandleFunc("GET /v1/admin/users/{sub}/bridges", srv.authorize(ScopeAdmin, srv.adminListUserBridges))
-	mux.HandleFunc("DELETE /v1/admin/bridges/{id}", srv.authorize(ScopeAdmin, srv.adminRevokeBridge))
-	mux.HandleFunc("GET /v1/admin/backends", srv.authorize(ScopeAdmin, srv.adminListBackends))
-	mux.HandleFunc("POST /v1/admin/backends/{name}", srv.authorize(ScopeAdmin, srv.adminSetBackend))
-	mux.HandleFunc("GET /v1/admin/demo-stats", srv.authorize(ScopeAdmin, srv.adminDemoStats))
+	mux.HandleFunc("GET /v1/admin/users", srv.authorize(ScopeAdminView, srv.adminListUsers))
+	mux.HandleFunc("POST /v1/admin/users", srv.authorize(ScopeUsersEdit, srv.adminCreateUser))
+	mux.HandleFunc("POST /v1/admin/users/{sub}/disabled", srv.authorize(ScopeUsersEdit, srv.adminSetUserDisabled))
+	mux.HandleFunc("POST /v1/admin/users/{sub}/role", srv.authorize(ScopeUsersEdit, srv.adminSetUserRole))
+	mux.HandleFunc("DELETE /v1/admin/users/{sub}", srv.authorize(ScopeUsersEdit, srv.adminDeleteUser))
+	mux.HandleFunc("POST /v1/admin/enroll-tokens", srv.authorize(ScopeUsersEdit, srv.adminIssueEnrollToken))
+	mux.HandleFunc("GET /v1/admin/app-creds", srv.authorize(ScopeAdminView, srv.adminListAppCreds))
+	mux.HandleFunc("POST /v1/admin/app-creds", srv.authorize(ScopeCredsEdit, srv.adminCreateAppCred))
+	mux.HandleFunc("POST /v1/admin/app-creds/{id}/revoke", srv.authorize(ScopeCredsEdit, srv.adminRevokeAppCred))
+	mux.HandleFunc("DELETE /v1/admin/app-creds/{id}", srv.authorize(ScopeCredsEdit, srv.adminDeleteAppCred))
+	mux.HandleFunc("GET /v1/admin/audit", srv.authorize(ScopeAdminView, srv.adminAudit))
+	mux.HandleFunc("GET /v1/admin/config", srv.authorize(ScopeAdminView, srv.adminConfig))
+	mux.HandleFunc("GET /v1/admin/users/{sub}/bridges", srv.authorize(ScopeAdminView, srv.adminListUserBridges))
+	mux.HandleFunc("DELETE /v1/admin/bridges/{id}", srv.authorize(ScopeBridgesEdit, srv.adminRevokeBridge))
+	mux.HandleFunc("GET /v1/admin/backends", srv.authorize(ScopeAdminView, srv.adminListBackends))
+	mux.HandleFunc("POST /v1/admin/backends/{name}", srv.authorize(ScopeBackendsEdit, srv.adminSetBackend))
+	mux.HandleFunc("GET /v1/admin/demo-stats", srv.authorize(ScopeAdminView, srv.adminDemoStats))
 
 	// Demo visitor analytics ingest. Authed by an app credential scoped to
 	// demo-stats ONLY — it can write a content-free hit and nothing else.
@@ -361,7 +361,7 @@ func (s *server) authenticate(r *http.Request) *Principal {
 	if s.adminToken != "" && checkKey(bearer, s.adminToken) {
 		return &Principal{
 			UserID: "bootstrap-admin", Kind: KindAdmin,
-			Scopes: []string{ScopeAdmin}, KeyFP: keyFingerprint(bearer),
+			Scopes: scopesForRole(RoleAdmin), KeyFP: keyFingerprint(bearer),
 		}
 	}
 
