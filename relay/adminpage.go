@@ -10,8 +10,8 @@
 //	and never renders prompt/result content (the API never returns it).
 //
 //	Layout: an app shell with a grouped sidebar — Admin (Users, Audit),
-//	Configure (Status, Enrol a bridge, Settings), and App credentials. A tiny
-//	client-side router swaps views; there is one page, no reloads.
+//	Configure (Status, Settings), and App credentials. A tiny client-side
+//	router swaps views; there is one page, no reloads.
 //
 //	Auth: it uses the browser's OIDC session cookie automatically; for
 //	bootstrap (before an OIDC admin exists) an admin can paste the
@@ -36,14 +36,14 @@ func (s *server) adminPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Route by session, server-side, so the console is a clean destination:
-	//   - a signed-in admin gets the console,
-	//   - a signed-in NON-admin is sent to their own status page (/),
+	//   - a signed-in console user (admin/operator/viewer) gets the console,
+	//   - a signed-in plain user is sent to their own status page (/),
 	//   - a visitor with NO OIDC session still gets the console HTML, because the
 	//     bootstrap admin authenticates by pasting RELAYENT_ADMIN_TOKEN (a
 	//     client-side XHR bearer, not a session) — its boot() probe then either
 	//     shows the console or, on 401/403, redirects to /login.
 	if s.oidc != nil {
-		if p := s.oidc.principalFromSession(r); p != nil && !p.Can(ScopeAdmin) {
+		if p := s.oidc.principalFromSession(r); p != nil && !p.Can(ScopeAdminView) {
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
@@ -170,6 +170,16 @@ const adminHTML = `<!doctype html>
   .navlink.active .ic { color:var(--accent); }
   .navlink .tw { transition:transform .15s ease; }
 
+  /* Onboard an app: its own top-level entry, set apart with a distinct accent
+     so it reads as the primary "start here" action rather than one more item
+     grouped under Apps. */
+  .navlink-onboard { margin:.3rem 0 .6rem; border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);
+    color:var(--warn); font-weight:600; }
+  .navlink-onboard .ic { color:var(--warn); }
+  .navlink-onboard:hover { background:color-mix(in srgb,var(--warn) 12%,transparent); color:var(--warn); }
+  .navlink-onboard.active { background:color-mix(in srgb,var(--warn) 18%,transparent); color:var(--warn); }
+  .navlink-onboard.active::before { background:var(--warn); }
+
   .subnav { display:flex; flex-direction:column; margin:1px 0 2px .55rem;
     padding-left:.55rem; border-left:1px solid var(--line); }
   .subnavlink { text-align:left; background:none; border:0; color:var(--muted);
@@ -228,9 +238,6 @@ const adminHTML = `<!doctype html>
   .dot { width:7px; height:7px; border-radius:50%; display:inline-block; box-shadow:0 0 0 3px transparent; }
   .ok .dot{background:var(--ok); box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 18%,transparent)} .ok{color:var(--ok)}
   .bad .dot{background:var(--faint)} .bad{color:var(--muted)}
-  .tag { font-size:.7rem; font-weight:600; padding:.13rem .55rem; border-radius:999px;
-    border:1px solid var(--line); color:var(--muted); letter-spacing:.01em; }
-  .tag.admin { color:var(--accent-fg); border-color:var(--accent-soft); background:var(--accent-soft); }
   .muted { color:var(--muted); }
 
   input,button,select { font:inherit; }
@@ -301,9 +308,42 @@ const adminHTML = `<!doctype html>
     background:color-mix(in srgb,var(--bad) 10%,transparent); }
   .banner.secret { border-color:color-mix(in srgb,var(--warn) 45%,transparent);
     background:color-mix(in srgb,var(--warn) 12%,transparent); }
+  .copybtn { margin-left:.6rem; padding:.15rem .55rem; font-size:.78rem; cursor:pointer;
+    border:1px solid var(--muted); border-radius:6px; background:transparent; color:inherit; }
+  .dc-cred-list { display:flex; flex-direction:column; gap:.35rem; margin:.4rem 0 .2rem; }
+  .dc-cred-list label { display:flex; align-items:center; gap:.5rem; font-size:.85rem; cursor:pointer; }
+  .credrow { display:flex; align-items:center; gap:.5rem; }
+  .credrow code { flex:1; word-break:break-all; margin-top:0; }
+  .credrow .copybtn { margin-left:0; flex-shrink:0; }
+  .wstep { display:inline-flex; align-items:center; justify-content:center; width:1.4rem; height:1.4rem;
+    margin-right:.5rem; border-radius:50%; font-size:.82rem; font-weight:600;
+    background:color-mix(in srgb,var(--warn) 20%,transparent); }
+  .cmd { margin-top:.7rem; padding:.7rem .85rem; border-radius:8px; overflow-x:auto; white-space:pre;
+    font-family:ui-monospace,monospace; font-size:.82rem; background:color-mix(in srgb,var(--muted) 12%,transparent);
+    border:1px solid color-mix(in srgb,var(--muted) 30%,transparent); }
+  .wsteps { display:flex; gap:.5rem; list-style:none; padding:0; margin:0 0 1.1rem; flex-wrap:wrap; }
+  .wsteps li { display:flex; align-items:center; gap:.4rem; font-size:.85rem; color:var(--muted); }
+  .wsteps li .wstep { background:color-mix(in srgb,var(--muted) 18%,transparent); }
+  .wsteps li.active { color:inherit; font-weight:600; }
+  .wsteps li.active .wstep { background:color-mix(in srgb,var(--warn) 30%,transparent); }
+  .wsteps li.done .wstep { background:color-mix(in srgb,var(--ok) 30%,transparent); }
+  .wsteps li + li::before { content:"›"; margin-right:.35rem; color:var(--muted); }
+  .wnav { margin-top:1.1rem; }
+  .ghost { background:transparent; border:1px solid var(--muted); color:inherit; }
+  .ghost:disabled { opacity:.4; cursor:not-allowed; }
   .hint { color:var(--muted); font-size:.82rem; margin:.15rem 0 0; }
   .view { display:none; }
   .view.active { display:block; }
+  /* Onboard runs as a centered modal over a backdrop, not a full-width view. */
+  #view-onboard.active { position:fixed; inset:0; z-index:60; display:flex;
+    align-items:center; justify-content:center; padding:1.5rem;
+    background:color-mix(in srgb, #000 45%, transparent); }
+  #view-onboard .obdialog { width:100%; max-width:560px; max-height:90vh; overflow-y:auto;
+    padding:1.6rem 1.7rem; border-radius:14px; background:var(--bg);
+    border:1px solid color-mix(in srgb,var(--muted) 30%,transparent);
+    box-shadow:0 18px 50px color-mix(in srgb,#000 40%,transparent); position:relative; }
+  #view-onboard .obclose { position:absolute; top:.7rem; right:.85rem; font-size:1.3rem;
+    line-height:1; background:transparent; border:0; color:var(--muted); cursor:pointer; }
 
   /* Credits / footer — sits at the bottom of every view (main is a flex column). */
   .credits { margin-top:auto; padding-top:1.75rem; border-top:1px solid var(--line-soft);
@@ -377,22 +417,26 @@ const adminHTML = `<!doctype html>
       <div><b>Relayent</b><br><span>Admin console</span></div>
     </div>
     <nav>
-      <button class="navgroup" data-group="admin" aria-expanded="true"><span class="gcaret">▾</span> Admin</button>
-      <div class="navgroup-items" data-group-items="admin">
+      <button class="navgroup" data-group="overview" aria-expanded="true"><span class="gcaret">▾</span> Overview</button>
+      <div class="navgroup-items" data-group-items="overview">
+        <button class="navlink" data-view="status"><span class="ic">◈</span> Relay &amp; bridges</button>
+      </div>
+      <button class="navlink navlink-onboard" data-view="onboard"><span class="ic">✦</span> Onboard an app</button>
+      <button class="navgroup" data-group="apps" aria-expanded="true"><span class="gcaret">▾</span> Apps</button>
+      <div class="navgroup-items" data-group-items="apps">
+        <button class="navlink" data-view="creds"><span class="ic">⚿</span> App credentials</button>
+        <button class="navlink" data-view="decommission"><span class="ic">⌫</span> Decommission</button>
+      </div>
+      <button class="navgroup" data-group="users" aria-expanded="true"><span class="gcaret">▾</span> Users</button>
+      <div class="navgroup-items" data-group-items="users">
         <button class="navlink" data-view="users"><span class="ic">◱</span> Users</button>
+      </div>
+      <button class="navgroup" data-group="operations" aria-expanded="false"><span class="gcaret">▾</span> Operations</button>
+      <div class="navgroup-items" data-group-items="operations">
         <button class="navlink" data-view="audit"><span class="ic">≣</span> Audit</button>
         <button class="navlink" data-view="demostats"><span class="ic">◔</span> Demo visitors</button>
-      </div>
-      <button class="navgroup" data-group="configure" aria-expanded="true"><span class="gcaret">▾</span> Configure</button>
-      <div class="navgroup-items" data-group-items="configure">
-        <button class="navlink" data-view="status"><span class="ic">◈</span> Relay &amp; bridges</button>
-        <button class="navlink" data-view="enroll"><span class="ic">＋</span> Enrol a bridge</button>
         <button class="navlink" data-view="backends"><span class="ic">◧</span> Backends</button>
         <button class="navlink" data-view="settings"><span class="ic">⚙</span> Settings</button>
-      </div>
-      <button class="navgroup" data-group="integration" aria-expanded="true"><span class="gcaret">▾</span> Integration</button>
-      <div class="navgroup-items" data-group-items="integration">
-        <button class="navlink" data-view="creds"><span class="ic">⚿</span> App credentials</button>
       </div>
       <button class="navgroup" data-group="help" aria-expanded="false"><span class="gcaret">▾</span> Help</button>
       <div class="navgroup-items" data-group-items="help" hidden>
@@ -437,6 +481,12 @@ const adminHTML = `<!doctype html>
         <div class="row">
           <input id="nsub" class="grow" placeholder="user id (OIDC sub, or any id)">
           <input id="nemail" class="grow" placeholder="email">
+          <select id="nrole">
+            <option value="user" selected>user</option>
+            <option value="viewer">viewer</option>
+            <option value="operator">operator</option>
+            <option value="admin">admin</option>
+          </select>
           <button id="adduser">Add user</button>
         </div>
         <p class="hint">Normally a user is created automatically on their first sign-in; add one here to pre-provision.</p>
@@ -456,8 +506,8 @@ const adminHTML = `<!doctype html>
       <div class="card">
         <h2>Recent activity <span class="note muted">— no content, ever</span></h2>
         <div class="tablewrap"><table>
-          <thead><tr><th>When</th><th>Event</th><th>User</th><th>Backend</th><th>Status</th><th>Bytes</th></tr></thead>
-          <tbody id="audit"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+          <thead><tr><th>When</th><th>Event</th><th>User</th><th>Backend</th><th>Status</th><th>Bytes</th><th>Host</th><th>Version</th></tr></thead>
+          <tbody id="audit"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -548,19 +598,6 @@ const adminHTML = `<!doctype html>
       </div>
     </section>
 
-    <!-- ENROLL -->
-    <section id="view-enroll" class="view">
-      <div class="head"><h1>Enrol a bridge</h1><p>Mint a one-time token for a user. Send it to them out-of-band; their bridge redeems it once.</p></div>
-      <div class="card">
-        <h2>Mint an enrolment token</h2>
-        <div class="row">
-          <select id="enrolluser" class="grow"><option value="">Loading users…</option></select>
-          <button id="mint">Mint token</button>
-        </div>
-        <p class="hint">The token is shown once, here, and never recoverable. It expires in 15 minutes by default.</p>
-      </div>
-    </section>
-
     <!-- BACKENDS -->
     <section id="view-backends" class="view">
       <div class="head"><h1>Backends</h1><p>Control which AI backends this relay exposes. A disabled backend is hidden from apps and refused at enqueue — use it to keep a public surface off paid subscriptions.</p></div>
@@ -595,6 +632,67 @@ const adminHTML = `<!doctype html>
       </div>
     </section>
 
+    <!-- ONBOARD AN APP (wizard over the existing app-cred / user / enrol-token APIs) -->
+    <section id="view-onboard" class="view">
+     <div class="obdialog" role="dialog" aria-modal="true" aria-label="Onboard an app">
+      <button class="obclose" id="ob-x" aria-label="Close">×</button>
+      <div class="head"><h1>Onboard an app</h1><p>Wire a new app (e.g. EngageHub) end to end: a credential to call the relay, a user whose subscription runs the jobs, and a bridge on that user's machine.</p></div>
+
+      <ol class="wsteps" id="ob-stepper">
+        <li data-step="0"><span class="wstep">1</span> App</li>
+        <li data-step="1"><span class="wstep">2</span> User</li>
+        <li data-step="2"><span class="wstep">3</span> Bridge</li>
+        <li data-step="3"><span class="wstep">✓</span> Done</li>
+      </ol>
+
+      <div class="card wpanel" data-step="0">
+        <h2>The app</h2>
+        <p class="hint">A label for the calling app. It stays on the relay — the app only ever holds the credential.</p>
+        <div class="row">
+          <input id="ob-appid" class="grow" placeholder="app id (e.g. engagehub)">
+          <button id="ob-mkcred">Mint credential</button>
+        </div>
+        <div id="ob-cred-box" hidden>
+          <p class="hint">✓ Credential (shown once — copy it now):</p>
+          <div class="credrow"><code id="ob-cred-val" class="cmd"></code><button type="button" class="copybtn" id="ob-cred-copy">Copy</button></div>
+        </div>
+      </div>
+
+      <div class="card wpanel" data-step="1" hidden>
+        <h2>The user</h2>
+        <p class="hint">Whose CLI subscription runs the jobs. The sub must be <b>exactly</b> the identifier the app sends as <code>target_user</code> — email, username, id, verbatim.</p>
+        <div class="row">
+          <input id="ob-sub" class="grow" placeholder="user id / target_user (e.g. alice@example.com)">
+          <button id="ob-mkuser">Create user</button>
+        </div>
+        <p class="hint" id="ob-user-done" hidden></p>
+      </div>
+
+      <div class="card wpanel" data-step="2" hidden>
+        <h2>The bridge</h2>
+        <p class="hint">Mint a one-time enrolment token, then run the bridge on the user's machine with it. It swaps the token for a bound credential on first start.</p>
+        <div class="row">
+          <button id="ob-mktoken">Mint enrolment token</button>
+          <span id="ob-tokenhint" class="muted"></span>
+        </div>
+        <pre id="ob-bridgecmd" class="cmd" hidden></pre>
+      </div>
+
+      <div class="card wpanel" data-step="3" hidden>
+        <h2>Give the app this config</h2>
+        <pre id="ob-config" class="cmd"></pre>
+        <p class="hint">The bridge (step 3) must be running on the user's machine before jobs will execute.</p>
+      </div>
+
+      <div class="row wnav">
+        <button id="ob-back" class="ghost" disabled>← Back</button>
+        <button id="ob-next" disabled>Next →</button>
+        <button id="ob-restart" class="ghost" hidden>Onboard another</button>
+        <button id="ob-done" hidden>Done</button>
+      </div>
+     </div>
+    </section>
+
     <!-- CREDENTIALS -->
     <section id="view-creds" class="view">
       <div class="head"><h1>App credentials</h1><p>Server-to-server keys for apps (e.g. EngageHub) that enqueue jobs on users' behalf.</p></div>
@@ -612,6 +710,34 @@ const adminHTML = `<!doctype html>
           <thead><tr><th>App</th><th>ID</th><th>Scopes</th><th>Status</th><th></th></tr></thead>
           <tbody id="apps"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
         </table></div>
+      </div>
+    </section>
+
+    <!-- DECOMMISSION -->
+    <section id="view-decommission" class="view">
+      <div class="head"><h1>Decommission</h1><p>Tear down a user cleanly: remove the user, every bridge bound to them, and any app credentials you select. This is permanent.</p></div>
+      <div class="card">
+        <h2>Choose a user</h2>
+        <div class="row">
+          <select id="dc-user" class="grow"><option value="">Loading users…</option></select>
+          <button id="dc-load" class="ghost">Review</button>
+        </div>
+      </div>
+      <div class="card" id="dc-review" hidden>
+        <h2>Will be deleted</h2>
+        <p class="hint"><b>User</b></p>
+        <div class="cmd" id="dc-userline"></div>
+        <p class="hint"><b>Bridges bound to this user</b> — their credentials stop working immediately.</p>
+        <div class="cmd" id="dc-bridges"></div>
+        <p class="hint"><b>App credentials</b> — not linked to a user, so tick the ones this app used. Unticked creds are left alone.</p>
+        <div id="dc-creds" class="dc-cred-list"><span class="muted">Loading…</span></div>
+        <div class="banner show bad" style="margin-top:1rem">
+          <strong>Permanent.</strong> Type the user id <code id="dc-echo"></code> below to confirm.
+        </div>
+        <div class="row">
+          <input id="dc-confirm" class="grow" placeholder="type the user id to confirm" autocomplete="off">
+          <button id="dc-delete" disabled>Delete everything</button>
+        </div>
       </div>
     </section>
 
@@ -637,7 +763,7 @@ const adminHTML = `<!doctype html>
         <div class="body">
         <dl class="help-dl">
           <dt>What it is</dt><dd>Everyone with an identity on this relay. A user usually appears automatically the first time they sign in; you can also pre-provision one with <b>Add a user</b>.</dd>
-          <dt>Roles</dt><dd><b>admin</b> can manage everything here; <b>user</b> can only run their own jobs and see their own status. The <b>first person ever to sign in becomes the admin</b>; everyone after is a user until you promote them (<b>Make admin</b> / <b>Demote</b>).</dd>
+          <dt>Roles</dt><dd><b>admin</b> can manage everything, including other users; <b>operator</b> manages app credentials, bridges, and backends, but not users; <b>viewer</b> sees everything read-only; <b>user</b> has no console access at all — just their own jobs and status page. The <b>first person ever to sign in becomes the admin</b>; everyone after is a user until you change their role.</dd>
           <dt>Enrol</dt><dd>Mints a one-time token for that user to pair their bridge — see “Enrol a bridge”.</dd>
           <dt>Disable / Delete</dt><dd><b>Disable</b> blocks a user's jobs immediately but keeps the record; <b>Delete</b> removes it. You can't disable, demote, or delete <b>yourself</b> — a safeguard so the last admin can't be locked out.</dd>
         </dl>
@@ -735,7 +861,11 @@ const adminHTML = `<!doctype html>
 
 <script nonce="%NONCE%">
 const $ = id => document.getElementById(id);
-let token = ""; // bootstrap admin token, kept in memory only
+// Bootstrap admin token. Persisted in sessionStorage so a refresh keeps the
+// session; sessionStorage (not localStorage) means it dies when the tab closes,
+// which suits a full-admin bootstrap token. Cleared on sign-out.
+let token = "";
+try { token = sessionStorage.getItem("relayent.admintok") || ""; } catch (e) {}
 
 function headers() {
   const h = {"Content-Type": "application/json"};
@@ -750,6 +880,22 @@ function banner(msg, kind, where) {
   if (kind === "ok") setTimeout(() => { b.className = "banner"; }, 4000);
 }
 
+// wireCopy makes btn copy the given value to the clipboard, showing "Copied" briefly.
+// navigator.clipboard needs a secure context (https/localhost); on a plain http
+// LAN IP it's undefined, so fall back to selecting selectEl's text for a manual
+// copy rather than throwing.
+function wireCopy(btn, value, selectEl) {
+  btn.onclick = async () => {
+    let ok = false;
+    try { await navigator.clipboard.writeText(value); ok = true; } catch (e) {}
+    if (ok) { btn.textContent = "Copied"; setTimeout(() => { btn.textContent = "Copy"; }, 1500); }
+    else if (selectEl) {
+      const rng = document.createRange(); rng.selectNodeContents(selectEl);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(rng);
+      btn.textContent = "Press ⌘/Ctrl+C";
+    }
+  };
+}
 function showSecret(label, value) {
   const b = $("banner");
   b.className = "banner show secret";
@@ -758,7 +904,12 @@ function showSecret(label, value) {
   strong.textContent = label + " (shown once — copy it now): ";
   const codeEl = document.createElement("code");
   codeEl.textContent = value;   // textContent — never innerHTML
-  b.appendChild(strong); b.appendChild(codeEl);
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "copybtn";
+  copyBtn.textContent = "Copy";
+  wireCopy(copyBtn, value, codeEl);
+  b.appendChild(strong); b.appendChild(codeEl); b.appendChild(copyBtn);
 }
 
 async function api(method, path, body) {
@@ -766,7 +917,9 @@ async function api(method, path, body) {
   if (body) opt.body = JSON.stringify(body);
   const r = await fetch(path, opt);
   if (r.status === 401 || r.status === 403) {
-    // Not (or no longer) an admin here — /login is the single sign-in surface.
+    // Not (or no longer) an admin here — drop any stale bootstrap token so the
+    // refresh loop can't re-adopt it, then send to /login (the sign-in surface).
+    try { sessionStorage.removeItem("relayent.admintok"); } catch (e) {}
     location.assign("/login?next=/admin");
     throw new Error("unauthorized");
   }
@@ -781,7 +934,7 @@ async function api(method, path, body) {
 function showApp() { $("shell").style.display = "grid"; }
 
 /* ---- view router ---- */
-const VIEWS = ["users","audit","demostats","status","enroll","backends","settings","creds","help"];
+const VIEWS = ["users","audit","demostats","status","backends","settings","onboard","creds","decommission","help"];
 function go(view) {
   if (!VIEWS.includes(view)) view = "users";
   for (const v of VIEWS) $("view-" + v).classList.toggle("active", v === view);
@@ -798,10 +951,10 @@ async function loadView(view) {
     if (view === "audit")    await loadAudit();
     if (view === "demostats") await loadDemoStats();
     if (view === "status")   await loadStatus();
-    if (view === "enroll")   await loadEnrollUsers();
     if (view === "backends") await loadBackends();
     if (view === "settings") await loadConfig();
     if (view === "creds")    await loadApps();
+    if (view === "decommission") await loadDecommission();
   } catch (e) { if (e.message !== "unauthorized") banner("Error: " + e.message, "bad"); }
 }
 
@@ -850,9 +1003,14 @@ async function loadUsers() {
     tr.appendChild(who);
 
     const roleTd = document.createElement("td");
-    const tag = document.createElement("span");
-    tag.className = "tag" + (u.role === "admin" ? " admin" : "");
-    tag.textContent = u.role; roleTd.appendChild(tag); tr.appendChild(roleTd);
+    const roleSel = document.createElement("select");
+    for (const r of ["user", "viewer", "operator", "admin"]) {
+      const o = document.createElement("option"); o.value = r; o.textContent = r;
+      if (r === u.role) o.selected = true;
+      roleSel.appendChild(o);
+    }
+    roleSel.onchange = () => setRole(u.sub, roleSel.value);
+    roleTd.appendChild(roleSel); tr.appendChild(roleTd);
 
     const bt = document.createElement("td"); bt.appendChild(pill(u.bridge_online, "online", "offline")); tr.appendChild(bt);
     tr.appendChild(cell(String(u.pending_jobs)));
@@ -861,10 +1019,6 @@ async function loadUsers() {
     const act = document.createElement("td");
     const wrap = document.createElement("div"); wrap.className = "actions";
     wrap.appendChild(btn("Enrol", "ghost sm", () => issueToken(u.sub)));
-    if (u.role === "admin")
-      wrap.appendChild(btn("Demote", "ghost sm", () => setRole(u.sub, "user")));
-    else
-      wrap.appendChild(btn("Make admin", "ghost sm", () => setRole(u.sub, "admin")));
     wrap.appendChild(btn(u.disabled ? "Enable" : "Disable", "ghost sm", () => setDisabled(u.sub, !u.disabled)));
     // Self-demote and self-delete are refused by the backend; the banner surfaces
     // the error if an admin tries it on their own row.
@@ -879,7 +1033,7 @@ async function loadAudit() {
   const data = await api("GET", "/v1/admin/audit?limit=50");
   const tb = $("audit"); tb.replaceChildren();
   const events = (data && data.events) || [];
-  if (!events.length) { emptyRow(tb, 6, "No activity yet."); return; }
+  if (!events.length) { emptyRow(tb, 8, "No activity yet."); return; }
   for (const e of events) {
     const tr = document.createElement("tr");
     tr.appendChild(cell(new Date(e.ts).toLocaleString()));
@@ -888,6 +1042,8 @@ async function loadAudit() {
     tr.appendChild(cell(e.backend || "—"));
     tr.appendChild(cell(e.status || "—"));
     tr.appendChild(cell(String((e.prompt_len||0) + (e.result_len||0))));
+    tr.appendChild(cell(e.host || "—"));
+    tr.appendChild(cell(e.version || "—"));
     tb.appendChild(tr);
   }
 }
@@ -940,8 +1096,16 @@ async function loadDemoStats() {
   fillBreak("d-oses", data.oses, "No visits yet.");
 }
 
+// ponytail: must match relay/main.go's onlineWindow const; no API field exposes it.
+const BRIDGE_ONLINE_WINDOW_MS = 40 * 1000;
+// Guards against overlapping calls (e.g. a double-click on the nav button):
+// each call captures its own generation and bails before mutating the DOM if
+// a newer call has started since, so only the latest render ever lands.
+let loadStatusGen = 0;
 async function loadStatus() {
+  const gen = ++loadStatusGen;
   const data = await api("GET", "/v1/admin/users");
+  if (gen !== loadStatusGen) return;
   const users = (data && data.users) || [];
   usersCache = users;
   const online = users.filter(u => u.bridge_online).length;
@@ -958,6 +1122,7 @@ async function loadStatus() {
     let binds = [];
     try { const d = await api("GET", "/v1/admin/users/" + encodeURIComponent(u.sub) + "/bridges"); binds = (d && d.bridges) || []; }
     catch (e) { /* skip on error */ }
+    if (gen !== loadStatusGen) return;
     if (!binds.length) {
       // A user with no enrolled bridge still shows once, so they're visible.
       const tr = document.createElement("tr");
@@ -972,9 +1137,10 @@ async function loadStatus() {
       const tr = document.createElement("tr");
       tr.appendChild(cell(u.email || u.sub));
       const idc = document.createElement("td"); const code = document.createElement("code"); code.textContent = b.bridge_id; idc.appendChild(code); tr.appendChild(idc);
-      const pt = document.createElement("td"); pt.appendChild(pill(u.bridge_online, "online", "offline")); tr.appendChild(pt);
-      tr.appendChild(cell(u.bridge_host || "—"));
-      tr.appendChild(cell(u.bridge_version || "—"));
+      const thisOnline = !!b.last_seen && (Date.now() - new Date(b.last_seen).getTime()) <= BRIDGE_ONLINE_WINDOW_MS;
+      const pt = document.createElement("td"); pt.appendChild(pill(thisOnline, "online", "offline")); tr.appendChild(pt);
+      tr.appendChild(cell((thisOnline && u.bridge_host) || "—"));
+      tr.appendChild(cell((thisOnline && u.bridge_version) || "—"));
       tr.appendChild(cell(b.enrolled_at ? new Date(b.enrolled_at).toLocaleDateString() : "—"));
       tr.appendChild(cell(b.last_seen ? new Date(b.last_seen).toLocaleString() : "—"));
       const act = document.createElement("td"); const wrap = document.createElement("div"); wrap.className = "actions";
@@ -991,18 +1157,6 @@ async function revokeBridge(id, who) {
     banner("Revoked bridge " + id, "ok"); loadStatus(); }
   catch (e) { banner("Error: " + e.message, "bad"); }
 }
-
-/* ---- ENROLL ---- */
-async function loadEnrollUsers() {
-  const data = await api("GET", "/v1/admin/users");
-  const users = (data && data.users) || [];
-  const sel = $("enrolluser"); sel.replaceChildren();
-  if (!users.length) { const o=document.createElement("option"); o.value=""; o.textContent="No users yet"; sel.appendChild(o); return; }
-  for (const u of users) {
-    const o = document.createElement("option"); o.value = u.sub; o.textContent = (u.email || u.sub); sel.appendChild(o);
-  }
-}
-$("mint").onclick = () => { const sub = $("enrolluser").value; if (sub) issueToken(sub); };
 
 /* ---- SETTINGS ---- */
 async function loadConfig() {
@@ -1170,8 +1324,8 @@ async function issueToken(sub) {
 }
 async function setRole(sub, role) {
   try { await api("POST", "/v1/admin/users/" + encodeURIComponent(sub) + "/role", {role});
-    banner((role === "admin" ? "Promoted " : "Demoted ") + sub, "ok"); loadUsers(); }
-  catch (e) { banner("Error: " + e.message, "bad"); }
+    banner("Set " + sub + " to " + role, "ok"); loadUsers(); }
+  catch (e) { banner("Error: " + e.message, "bad"); loadUsers(); }
 }
 async function setDisabled(sub, disabled) {
   try { await api("POST", "/v1/admin/users/" + encodeURIComponent(sub) + "/disabled?disabled=" + disabled);
@@ -1197,10 +1351,10 @@ async function deleteApp(id, appId) {
 }
 
 $("adduser").onclick = async () => {
-  const sub = $("nsub").value.trim(), email = $("nemail").value.trim();
+  const sub = $("nsub").value.trim(), email = $("nemail").value.trim(), role = $("nrole").value;
   if (!sub || !email) { banner("user id and email are required", "bad"); return; }
-  try { await api("POST", "/v1/admin/users", {sub, email});
-    $("nsub").value = ""; $("nemail").value = ""; banner("User added", "ok"); loadUsers(); }
+  try { await api("POST", "/v1/admin/users", {sub, email, role});
+    $("nsub").value = ""; $("nemail").value = ""; $("nrole").value = "user"; banner("User added", "ok"); loadUsers(); }
   catch (e) { banner("Error: " + e.message, "bad"); }
 };
 $("addapp").onclick = async () => {
@@ -1210,8 +1364,197 @@ $("addapp").onclick = async () => {
     $("appid").value = ""; showSecret("App credential for " + app_id, r.credential); loadApps(); }
   catch (e) { banner("Error: " + e.message, "bad"); }
 };
+
+/* ---- Onboard-an-app wizard: a one-step-at-a-time flow over the existing
+   app-cred / user / enrol-token APIs. ob.step is the visible panel; ob.done[i]
+   gates whether Next is allowed to leave step i. ---- */
+const ob = { step: 0, cred: "", credId: "", sub: "", appId: "", done: [false, false, false, true] };
+const OB_LAST = 3;
+
+function obShow() {
+  for (const p of document.querySelectorAll("#view-onboard .wpanel"))
+    p.hidden = Number(p.dataset.step) !== ob.step;
+  for (const li of document.querySelectorAll("#ob-stepper li")) {
+    const s = Number(li.dataset.step);
+    li.classList.toggle("active", s === ob.step);
+    li.classList.toggle("done", s < ob.step && ob.done[s]);
+  }
+  $("ob-back").disabled = ob.step === 0;
+  $("ob-next").hidden = ob.step === OB_LAST;
+  $("ob-next").disabled = !ob.done[ob.step];
+  $("ob-restart").hidden = ob.step !== OB_LAST;
+  $("ob-done").hidden = ob.step !== OB_LAST;
+}
+function obReset() {
+  ob.step = 0; ob.cred = ""; ob.credId = ""; ob.sub = ""; ob.appId = ""; ob.done = [false, false, false, true];
+  $("ob-appid").value = ""; $("ob-sub").value = "";
+  $("ob-cred-box").hidden = true; $("ob-user-done").hidden = true;
+  $("ob-bridgecmd").hidden = true; $("ob-tokenhint").textContent = "";
+  obShow();
+}
+// Roll back a half-finished onboard: delete whatever was created (credential,
+// user) so an abandoned wizard leaves nothing behind — all-or-none. The enrol
+// token (step 3) needs no cleanup: it is one-time and simply expires unused.
+async function obRollback() {
+  const undo = [];
+  if (ob.sub)    undo.push(api("DELETE", "/v1/admin/users/" + encodeURIComponent(ob.sub)).catch(() => {}));
+  if (ob.credId) undo.push(api("DELETE", "/v1/admin/app-creds/" + encodeURIComponent(ob.credId)).catch(() => {}));
+  await Promise.all(undo);
+  loadApps(); loadUsers();
+}
+function obRenderSummary() {
+  $("ob-config").textContent =
+    "relay_url   = " + location.origin + "\n" +
+    "credential  = " + ob.cred + "\n" +
+    "target_user = " + ob.sub +
+    "\n\n# From a Docker container, use host.docker.internal instead of 127.0.0.1/localhost in relay_url.";
+}
+
+// Close the modal (× or backdrop click). If the onboard was started but not
+// finished (something created, Done not reached), offer to roll it back so no
+// partial app is left behind.
+async function obClose() {
+  const partial = ob.step < OB_LAST && (ob.credId || ob.sub);
+  if (partial) {
+    if (confirm("This onboard isn't finished. Delete what was created (credential" + (ob.sub ? " and user" : "") + ") so nothing partial is left?")) {
+      await obRollback();
+      banner("Rolled back the unfinished onboard", "ok");
+    }
+  }
+  obReset();
+  go("status");
+}
+$("ob-x").onclick = obClose;
+$("view-onboard").addEventListener("click", (e) => { if (e.target.id === "view-onboard") obClose(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("view-onboard").classList.contains("active")) obClose();
+});
+
+$("ob-next").onclick = () => { if (ob.done[ob.step] && ob.step < OB_LAST) { ob.step++; if (ob.step === OB_LAST) obRenderSummary(); obShow(); } };
+$("ob-back").onclick = () => { if (ob.step > 0) { ob.step--; obShow(); } };
+$("ob-restart").onclick = obReset;
+$("ob-done").onclick = () => { obReset(); go("status"); };
+
+$("ob-mkcred").onclick = async () => {
+  const app_id = $("ob-appid").value.trim();
+  if (!app_id) { banner("app id is required", "bad"); return; }
+  try {
+    const r = await api("POST", "/v1/admin/app-creds", {app_id});
+    // Credential is "<id>.<secret>"; keep the id so an aborted onboard can roll
+    // the credential back.
+    ob.cred = r.credential; ob.credId = r.credential.split(".")[0]; ob.appId = app_id; ob.done[0] = true;
+    // Show the secret inside the dialog (the page banner sits behind the modal
+    // backdrop, so it would be hidden). textContent — never innerHTML.
+    const val = $("ob-cred-val");
+    val.textContent = r.credential;
+    wireCopy($("ob-cred-copy"), r.credential, val);
+    $("ob-cred-box").hidden = false;
+    obShow(); loadApps();
+  } catch (e) { banner("Error: " + e.message, "bad"); }
+};
+$("ob-mkuser").onclick = async () => {
+  const sub = $("ob-sub").value.trim();
+  if (!sub) { banner("user id is required", "bad"); return; }
+  try {
+    await api("POST", "/v1/admin/users", {sub, email: sub});
+    ob.sub = sub; ob.done[1] = true;
+    $("ob-user-done").textContent = "✓ User " + sub + " created.";
+    $("ob-user-done").hidden = false;
+    $("ob-tokenhint").textContent = "For user " + sub + ".";
+    obShow(); loadUsers();
+  } catch (e) { banner("Error: " + e.message, "bad"); }
+};
+$("ob-mktoken").onclick = async () => {
+  if (!ob.sub) { banner("create the user first", "bad"); return; }
+  try {
+    const r = await api("POST", "/v1/admin/enroll-tokens", {user_sub: ob.sub});
+    // On the user's machine: install the bridge, then run it with the enrolment
+    // token as the key. The token is one-time; the bridge swaps it for a bound
+    // credential on first start, so no secret is stored after that.
+    $("ob-bridgecmd").textContent =
+      "# On " + ob.sub + "'s machine (token is one-time, expires ~15 min):\n\n" +
+      "# 1. install the bridge\n" +
+      "curl -fsSL https://raw.githubusercontent.com/navjyotnishant/relayent/main/install.sh \\\n" +
+      "  | RELAYENT_RELAY_URL=" + location.origin + " RELAYENT_PAIRING_KEY=" + r.token + " sh\n\n" +
+      "# 2. start it\n" +
+      "RELAYENT_RELAY_URL=" + location.origin + " \\\n" +
+      "RELAYENT_PAIRING_KEY=" + r.token + " \\\n" +
+      "  relayent-bridge";
+    $("ob-bridgecmd").hidden = false;
+    ob.done[2] = true; obShow();
+    banner("Enrolment token minted", "ok");
+  } catch (e) { banner("Error: " + e.message, "bad"); }
+};
+obShow();
+
+/* ---- Decommission: delete a user + their bridge bindings + selected app-creds.
+   All over existing DELETE endpoints. Type-to-confirm gates the delete. ---- */
+const dc = { sub: "", bridges: [] };
+async function loadDecommission() {
+  $("dc-review").hidden = true;
+  const data = await api("GET", "/v1/admin/users");
+  const users = (data && data.users) || [];
+  const sel = $("dc-user"); sel.replaceChildren();
+  if (!users.length) { const o=document.createElement("option"); o.value=""; o.textContent="No users"; sel.appendChild(o); return; }
+  const o0=document.createElement("option"); o0.value=""; o0.textContent="Select a user…"; sel.appendChild(o0);
+  for (const u of users) { const o=document.createElement("option"); o.value=u.sub; o.textContent=(u.email||u.sub); sel.appendChild(o); }
+}
+$("dc-load").onclick = async () => {
+  const sub = $("dc-user").value;
+  if (!sub) { banner("pick a user", "bad"); return; }
+  dc.sub = sub;
+  // Bridges bound to this user.
+  const bd = await api("GET", "/v1/admin/users/" + encodeURIComponent(sub) + "/bridges");
+  dc.bridges = (bd && bd.bridges) || [];
+  $("dc-userline").textContent = sub;
+  $("dc-bridges").textContent = dc.bridges.length
+    ? dc.bridges.map(b => b.bridge_id + (b.last_seen ? "  (last seen " + b.last_seen + ")" : "")).join("\n")
+    : "(none)";
+  // App-creds — unlinked, so list all and let the admin tick.
+  const cd = await api("GET", "/v1/admin/app-creds");
+  const creds = (cd && cd.app_creds) || [];
+  const box = $("dc-creds"); box.replaceChildren();
+  if (!creds.length) { const s=document.createElement("span"); s.className="muted"; s.textContent="(no app credentials)"; box.appendChild(s); }
+  for (const c of creds) {
+    const lab=document.createElement("label");
+    const cb=document.createElement("input"); cb.type="checkbox"; cb.value=c.id; cb.className="dc-credcb";
+    const t=document.createTextNode(c.app_id + "  ·  " + c.id + (c.revoked ? "  (revoked)" : ""));
+    lab.appendChild(cb); lab.appendChild(t); box.appendChild(lab);
+  }
+  $("dc-echo").textContent = sub;
+  $("dc-confirm").value = ""; $("dc-delete").disabled = true;
+  $("dc-review").hidden = false;
+};
+$("dc-confirm").oninput = () => { $("dc-delete").disabled = $("dc-confirm").value.trim() !== dc.sub; };
+$("dc-delete").onclick = async () => {
+  if ($("dc-confirm").value.trim() !== dc.sub) return;
+  const credIds = Array.from(document.querySelectorAll(".dc-credcb:checked")).map(cb => cb.value);
+  $("dc-delete").disabled = true;
+  const fail = [];
+  // Bindings first, then chosen creds, then the user last.
+  for (const b of dc.bridges) {
+    try { await api("DELETE", "/v1/admin/bridges/" + encodeURIComponent(b.bridge_id)); }
+    catch (e) { fail.push("bridge " + b.bridge_id + ": " + e.message); }
+  }
+  for (const id of credIds) {
+    try { await api("DELETE", "/v1/admin/app-creds/" + encodeURIComponent(id)); }
+    catch (e) { fail.push("cred " + id + ": " + e.message); }
+  }
+  try { await api("DELETE", "/v1/admin/users/" + encodeURIComponent(dc.sub)); }
+  catch (e) { fail.push("user " + dc.sub + ": " + e.message); }
+  if (fail.length) banner("Partly done — failures: " + fail.join("; "), "bad");
+  else banner("Decommissioned " + dc.sub, "ok");
+  loadDecommission(); loadUsers(); loadApps();
+};
+
 for (const b of document.querySelectorAll(".navlink"))
   b.onclick = () => go(b.dataset.view);
+
+// Sign out: drop the bootstrap token before following the server logout link,
+// so a bootstrap-only session actually ends instead of surviving in the tab.
+$("logout").addEventListener("click", () => {
+  try { sessionStorage.removeItem("relayent.admintok"); } catch (e) {}
+});
 
 /* Collapsible sidebar groups: each header folds/unfolds its items; the state is
    remembered per group in localStorage so it sticks across reloads. */
@@ -1273,6 +1616,7 @@ function adoptTokenFromHash() {
   const m = h.match(/(?:^#|&)token=([^&]+)/);
   if (m) {
     token = decodeURIComponent(m[1]);
+    try { sessionStorage.setItem("relayent.admintok", token); } catch (e) {}
     const cleaned = h.replace(/(?:^#|&)token=[^&]+/, "").replace(/^#&/, "#");
     history.replaceState(null, "", location.pathname + location.search + (cleaned === "#" ? "" : cleaned));
   }

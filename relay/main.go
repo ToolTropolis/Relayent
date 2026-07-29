@@ -449,6 +449,7 @@ func (s *server) machinePrincipal(id, secret string) *Principal {
 		return &Principal{
 			UserID: b.UserSub, Kind: KindUserBridge,
 			Scopes: []string{ScopeClaim}, KeyFP: keyFingerprint(id),
+			BridgeID: id,
 		}
 	}
 	// App credential?
@@ -671,10 +672,15 @@ func (s *server) postResult(w http.ResponseWriter, r *http.Request, p *Principal
 	if !res.OK {
 		status = api.StatusError
 	}
-	_ = s.store.Append(AuditEvent{
+	ev := AuditEvent{
 		ActorSub: p.UserID, Event: EvResult, JobID: id, TargetSub: p.UserID,
 		Status: status, ResultLen: len(res.Text) + jsonLen(res.JSON),
-	})
+		BridgeID: p.BridgeID,
+	}
+	if caps, _, _ := s.q.Capabilities(p.UserID); caps.Hostname != "" || caps.Version != "" {
+		ev.Host, ev.Version = caps.Hostname, caps.Version
+	}
+	_ = s.store.Append(ev)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
 }
 
