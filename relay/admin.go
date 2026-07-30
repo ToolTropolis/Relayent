@@ -177,6 +177,23 @@ func (s *server) adminCreateAppCred(w http.ResponseWriter, r *http.Request, p *P
 	if len(scopes) == 0 {
 		scopes = []string{ScopeEnqueue}
 	}
+	// An app credential may only ever carry scopes from the app-credential
+	// vocabulary (enqueue/claim/demo-stats) — never an admin-console scope.
+	// Without this, an operator (who holds ScopeCredsEdit but not
+	// ScopeAdmin/ScopeUsersEdit) could mint a credential with scopes:["admin"]
+	// and use its bearer token against POST /users/{sub}/role to self-promote.
+	// This can't be "does the caller already hold this scope" — even a real
+	// admin console principal (scopesForRole(RoleAdmin)) doesn't hold
+	// ScopeEnqueue itself, since consoles don't run jobs; it only grants them.
+	for _, sc := range scopes {
+		switch sc {
+		case ScopeEnqueue, ScopeClaim, ScopeDemoStats:
+			// allowed
+		default:
+			writeErr(w, http.StatusForbidden, "app credentials cannot carry scope \""+sc+"\"")
+			return
+		}
+	}
 	full, id, keyHash, err := newMachineCredential()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "could not issue credential")

@@ -99,3 +99,30 @@ func TestAdminAppCredListHasNoSecret(t *testing.T) {
 		t.Errorf("expected the app in the listing, got %s", body)
 	}
 }
+
+// TestAdminAppCredCannotGrantAdminScope proves an operator (ScopeCredsEdit but
+// not ScopeAdmin/ScopeUsersEdit) cannot mint an app credential carrying an
+// admin-console scope to self-escalate via that credential's bearer token.
+func TestAdminAppCredCannotGrantAdminScope(t *testing.T) {
+	s := adminTestServer(t)
+	operator := &Principal{Kind: KindAdmin, Scopes: []string{ScopeAdminView, ScopeCredsEdit, ScopeBridgesEdit, ScopeBackendsEdit}}
+
+	for _, scope := range []string{ScopeAdmin, ScopeAdminView, ScopeUsersEdit, ScopeCredsEdit, ScopeBridgesEdit, ScopeBackendsEdit} {
+		rec := httptest.NewRecorder()
+		s.adminCreateAppCred(rec, adminReq("POST", `{"app_id":"evil","scopes":["`+scope+`"]}`), operator)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("granting scope %q: got %d %s, want 403", scope, rec.Code, rec.Body)
+		}
+	}
+
+	// Even an admin console principal — which doesn't hold ScopeEnqueue itself
+	// — must still be able to grant the app-credential vocabulary.
+	admin := &Principal{Kind: KindAdmin, Scopes: []string{ScopeAdmin, ScopeAdminView, ScopeUsersEdit, ScopeCredsEdit, ScopeBridgesEdit, ScopeBackendsEdit}}
+	for _, scope := range []string{ScopeEnqueue, ScopeClaim, ScopeDemoStats} {
+		rec := httptest.NewRecorder()
+		s.adminCreateAppCred(rec, adminReq("POST", `{"app_id":"legit","scopes":["`+scope+`"]}`), admin)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("granting legitimate scope %q: got %d %s, want 200", scope, rec.Code, rec.Body)
+		}
+	}
+}
