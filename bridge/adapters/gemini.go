@@ -66,6 +66,11 @@ func (a *GeminiAdapter) Run(ctx context.Context, req Request) (Result, error) {
 
 // run performs one CLI invocation. retry=true marks a single JSON-repair retry so
 // it doesn't recurse further.
+//
+// req.Effort is silently ignored: the gemini CLI has no reasoning-depth/effort
+// flag or config key (verified against --help), unlike claude (--effort),
+// codex (-c model_reasoning_effort=...), and cursor (model-string bracket
+// syntax). There is nothing honest to map it to here.
 func (a *GeminiAdapter) run(ctx context.Context, req Request, retry bool) (Result, error) {
 	// Compose the prompt: prepend any system instruction, and for a schema request
 	// echo the actual schema in the prompt (the CLI has no schema flag; we instruct

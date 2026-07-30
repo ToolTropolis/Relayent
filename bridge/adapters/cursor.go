@@ -84,7 +84,14 @@ func (a *CursorAdapter) run(ctx context.Context, req Request, retry bool) (Resul
 	// non-interactive use in an untrusted workspace.
 	args := []string{"-p", "--output-format", "json", "--mode", "ask", "--trust"}
 	if req.Model != "" {
-		args = append(args, "--model", req.Model)
+		model := req.Model
+		// cursor-agent has no separate effort flag — it's a bracket parameter on
+		// the model string itself (e.g. "claude-opus-4-8[effort=high]"), so it can
+		// only be applied when a model was also given.
+		if req.Effort != "" {
+			model += "[effort=" + req.Effort + "]"
+		}
+		args = append(args, "--model", model)
 	}
 
 	prompt := req.Prompt

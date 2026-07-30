@@ -170,6 +170,7 @@ Content-Type: application/json
 | `model` | string | no | A value from `models[]`. Omit for the backend's default. |
 | `system` | string | no | System instruction. |
 | `json_schema` | object | no | JSON Schema. When set, the response is a parsed `json` object (best-effort). |
+| `effort` | string | no | Reasoning-depth hint: `low` \| `medium` \| `high` \| `xhigh` \| `max`. Per-backend support: `claude` (`--effort`) and `codex` (`-c model_reasoning_effort=...`) map it directly; `cursor` only applies it when `model` is also set (folded into the model string); `gemini` has no such control and ignores it. |
 
 ```json
 {

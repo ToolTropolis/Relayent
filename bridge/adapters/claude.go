@@ -85,6 +85,9 @@ func (a *ClaudeAdapter) run(ctx context.Context, req Request, retry bool) (Resul
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}
+	if req.Effort != "" {
+		args = append(args, "--effort", req.Effort)
+	}
 
 	prompt := req.Prompt
 	if req.JSONSchema != nil {

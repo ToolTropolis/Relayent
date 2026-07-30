@@ -75,6 +75,9 @@ func (a *CodexAdapter) run(ctx context.Context, req Request, retry bool) (Result
 	if req.Model != "" {
 		args = append(args, "-c", "model="+req.Model)
 	}
+	if req.Effort != "" {
+		args = append(args, "-c", "model_reasoning_effort="+req.Effort)
+	}
 	args = append(args, "-") // read prompt from stdin
 
 	// When a schema/JSON is requested, steer Codex to emit JSON only. Codex has no

@@ -574,6 +574,7 @@ func (s *server) enqueue(w http.ResponseWriter, r *http.Request, p *Principal) {
 		Prompt:     req.Prompt,
 		System:     req.System,
 		JSONSchema: req.JSONSchema,
+		Effort:     req.Effort,
 	})
 	// Audit: IDs, backend, model, and the prompt's LENGTH — never the prompt.
 	_ = s.store.Append(AuditEvent{

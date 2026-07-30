@@ -21,6 +21,11 @@ type Request struct {
 	System     string // optional system instruction
 	JSONSchema any    // when non-nil, ask the CLI for structured JSON matching this schema
 
+	// Effort is an optional reasoning-depth hint ("low"|"medium"|"high"|"xhigh"|
+	// "max"). Support is per-adapter and best-effort: an adapter with no real
+	// mechanism for it simply ignores the field rather than erroring.
+	Effort string
+
 	// WorkDir is the directory the CLI process runs in. It must always be set to
 	// the bridge's dedicated workspace and never left empty: a child process
 	// otherwise inherits the bridge's own working directory, and on macOS the OS

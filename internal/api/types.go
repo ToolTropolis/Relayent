@@ -29,6 +29,13 @@ type EnqueueRequest struct {
 	System     string `json:"system,omitempty"`      // optional system instruction
 	JSONSchema any    `json:"json_schema,omitempty"` // optional JSON Schema for structured output
 
+	// Effort is an optional reasoning-depth hint: "low" | "medium" | "high" |
+	// "xhigh" | "max". Support is per-backend and best-effort — claude and codex
+	// have a real mechanism (--effort, -c model_reasoning_effort), cursor folds it
+	// into the model string's bracket syntax (only when Model is also set), and
+	// gemini has no such control at all, so it is silently ignored there.
+	Effort string `json:"effort,omitempty"`
+
 	// TargetUser routes the job to a specific user's bridge/subscription. Required
 	// for an app credential serving many users; ignored for a bridge or legacy
 	// principal, which already carry their own identity. It is the OIDC subject of
@@ -50,6 +57,7 @@ type Job struct {
 	Prompt     string `json:"prompt"`
 	System     string `json:"system,omitempty"`
 	JSONSchema any    `json:"json_schema,omitempty"`
+	Effort     string `json:"effort,omitempty"`
 }
 
 // ResultRequest is the body of POST /v1/jobs/{id}/result — the bridge reporting
