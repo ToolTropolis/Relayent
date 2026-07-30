@@ -223,10 +223,14 @@ func (b *bridge) process(ctx context.Context, job api.Job) {
 	} else if !adapter.Available() {
 		res = api.ResultRequest{OK: false, Error: b.unavailableReason(job.Backend, adapter)}
 	} else {
+		prompt := job.Prompt
+		if len(job.Messages) > 0 {
+			prompt = flattenMessages(job.Messages)
+		}
 		jobCtx, cancel := context.WithTimeout(ctx, b.cfg.JobTimeout)
 		out, runErr := adapter.Run(jobCtx, adapters.Request{
 			Model:      job.Model,
-			Prompt:     job.Prompt,
+			Prompt:     prompt,
 			System:     job.System,
 			JSONSchema: job.JSONSchema,
 			Effort:     job.Effort,
@@ -251,6 +255,27 @@ func (b *bridge) process(ctx context.Context, job api.Job) {
 	} else {
 		log.Printf("[relayent-bridge] job %s error: %s", job.ID, res.Error)
 	}
+}
+
+// flattenMessages turns a conversation history into a single prompt string.
+// None of the four CLI backends accept a structured message array in headless
+// mode (verified against each CLI's own --help — all support only resuming
+// their OWN prior local session, not an arbitrary caller-supplied history), so
+// this is the one place the wire's messages[] becomes what every adapter
+// already knows how to consume: a plain prompt.
+func flattenMessages(msgs []api.Message) string {
+	var b strings.Builder
+	for i, m := range msgs {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		role := m.Role
+		if role == "" {
+			role = "user"
+		}
+		b.WriteString(strings.ToUpper(role[:1]) + role[1:] + ": " + m.Content)
+	}
+	return b.String()
 }
 
 // postResult sends the outcome to POST /v1/jobs/{id}/result.

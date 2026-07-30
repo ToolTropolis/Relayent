@@ -540,8 +540,12 @@ func (s *server) enqueue(w http.ResponseWriter, r *http.Request, p *Principal) {
 	if !decode(w, r, &req) {
 		return
 	}
-	if strings.TrimSpace(req.Backend) == "" || strings.TrimSpace(req.Prompt) == "" {
-		writeErr(w, http.StatusBadRequest, "backend and prompt are required")
+	if strings.TrimSpace(req.Backend) == "" {
+		writeErr(w, http.StatusBadRequest, "backend is required")
+		return
+	}
+	if strings.TrimSpace(req.Prompt) == "" && len(req.Messages) == 0 {
+		writeErr(w, http.StatusBadRequest, "prompt or messages is required")
 		return
 	}
 
@@ -574,12 +578,19 @@ func (s *server) enqueue(w http.ResponseWriter, r *http.Request, p *Principal) {
 		Prompt:     req.Prompt,
 		System:     req.System,
 		JSONSchema: req.JSONSchema,
+		Messages:   req.Messages,
 		Effort:     req.Effort,
 	})
-	// Audit: IDs, backend, model, and the prompt's LENGTH — never the prompt.
+	// Audit: IDs, backend, model, and the content's LENGTH — never the content
+	// itself. promptLen covers Prompt or, if Messages was used instead, the sum
+	// of every message's content length.
+	promptLen := len(req.Prompt)
+	for _, m := range req.Messages {
+		promptLen += len(m.Content)
+	}
 	_ = s.store.Append(AuditEvent{
 		ActorSub: p.UserID, Event: EvEnqueue, JobID: id, TargetSub: target,
-		Backend: req.Backend, Model: req.Model, PromptLen: len(req.Prompt),
+		Backend: req.Backend, Model: req.Model, PromptLen: promptLen,
 	})
 	writeJSON(w, http.StatusAccepted, api.EnqueueResponse{JobID: id})
 }

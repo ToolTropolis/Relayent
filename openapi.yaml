@@ -566,22 +566,46 @@ components:
   schemas:
     EnqueueRequest:
       type: object
-      required: [backend, prompt]
+      required: [backend]
+      description: |
+        Either prompt or messages must be set; messages takes precedence when both
+        are present.
       properties:
         backend: { type: string, enum: [claude, codex, gemini, cursor] }
         model: { type: string, description: Optional CLI model override }
         prompt: { type: string }
+        messages:
+          type: array
+          description: |
+            Multi-turn conversation history, alternative to prompt. None of the four
+            CLIs accept a structured message array headlessly, so the bridge flattens
+            this into a single prompt before invoking the CLI.
+          items: { $ref: "#/components/schemas/Message" }
         system: { type: string, description: Optional system instruction }
         json_schema:
           description: Optional JSON Schema; when set the bridge requests structured JSON.
           type: object
           additionalProperties: true
+        effort:
+          type: string
+          enum: [low, medium, high, xhigh, max]
+          description: |
+            Optional reasoning-depth hint. Per-backend support: claude (--effort) and
+            codex (-c model_reasoning_effort=...) map it directly; cursor only applies
+            it when model is also set (folded into the model string); gemini has no
+            such control and ignores it.
         target_user:
           type: string
           description: |
             Multi-tenant only. Routes the job to a specific user's bridge. Required
             for an app credential serving many users; ignored for a bridge/legacy
             principal, which route to themselves.
+    Message:
+      type: object
+      required: [role, content]
+      properties:
+        role: { type: string, enum: [user, assistant, system] }
+        content: { type: string }
     EnqueueResponse:
       type: object
       properties:
@@ -593,8 +617,12 @@ components:
         backend: { type: string }
         model: { type: string }
         prompt: { type: string }
+        messages:
+          type: array
+          items: { $ref: "#/components/schemas/Message" }
         system: { type: string }
         json_schema: { type: object, additionalProperties: true }
+        effort: { type: string }
     ResultRequest:
       type: object
       required: [ok]

@@ -29,6 +29,15 @@ type EnqueueRequest struct {
 	System     string `json:"system,omitempty"`      // optional system instruction
 	JSONSchema any    `json:"json_schema,omitempty"` // optional JSON Schema for structured output
 
+	// Messages carries multi-turn conversation history as an alternative to a
+	// single Prompt. None of the four CLI backends accept a structured message
+	// array in headless mode (verified against each CLI's own --help; all
+	// support only resuming their OWN prior local session, not an
+	// arbitrary caller-supplied history) — so when Messages is non-empty, the
+	// bridge flattens it into a single prompt string before invoking the CLI.
+	// When Messages is set, it takes precedence over Prompt.
+	Messages []Message `json:"messages,omitempty"`
+
 	// Effort is an optional reasoning-depth hint: "low" | "medium" | "high" |
 	// "xhigh" | "max". Support is per-backend and best-effort — claude and codex
 	// have a real mechanism (--effort, -c model_reasoning_effort), cursor folds it
@@ -43,6 +52,12 @@ type EnqueueRequest struct {
 	TargetUser string `json:"target_user,omitempty"`
 }
 
+// Message is one turn in a conversation, for EnqueueRequest.Messages.
+type Message struct {
+	Role    string `json:"role"`    // "user" | "assistant" | "system"
+	Content string `json:"content"`
+}
+
 // EnqueueResponse is returned by POST /v1/jobs.
 type EnqueueResponse struct {
 	JobID string `json:"job_id"`
@@ -51,13 +66,14 @@ type EnqueueResponse struct {
 // Job is what the bridge claims from GET /v1/jobs/next. It is the EnqueueRequest
 // plus the server-assigned id.
 type Job struct {
-	ID         string `json:"id"`
-	Backend    string `json:"backend"`
-	Model      string `json:"model,omitempty"`
-	Prompt     string `json:"prompt"`
-	System     string `json:"system,omitempty"`
-	JSONSchema any    `json:"json_schema,omitempty"`
-	Effort     string `json:"effort,omitempty"`
+	ID         string    `json:"id"`
+	Backend    string    `json:"backend"`
+	Model      string    `json:"model,omitempty"`
+	Prompt     string    `json:"prompt"`
+	System     string    `json:"system,omitempty"`
+	JSONSchema any       `json:"json_schema,omitempty"`
+	Messages   []Message `json:"messages,omitempty"`
+	Effort     string    `json:"effort,omitempty"`
 }
 
 // ResultRequest is the body of POST /v1/jobs/{id}/result — the bridge reporting

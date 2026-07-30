@@ -166,7 +166,8 @@ Content-Type: application/json
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `backend` | string | yes | `claude` \| `codex` \| `cursor` \| `gemini`. Use one reporting `ready: true`. |
-| `prompt` | string | yes | The content prompt. |
+| `prompt` | string | yes\* | The content prompt. \*Not required if `messages` is set. |
+| `messages` | array | no | Multi-turn conversation history as `[{"role": "user"\|"assistant"\|"system", "content": "..."}]`. Takes precedence over `prompt` when set. None of the four CLIs accept a structured message array headlessly, so the bridge flattens it into a single prompt before invoking the CLI — there is no true multi-turn session on the wire, just history folded into one request. |
 | `model` | string | no | A value from `models[]`. Omit for the backend's default. |
 | `system` | string | no | System instruction. |
 | `json_schema` | object | no | JSON Schema. When set, the response is a parsed `json` object (best-effort). |
