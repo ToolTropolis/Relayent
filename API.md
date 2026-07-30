@@ -376,14 +376,14 @@ In all cases the token is a secret: never log it, embed it in a URL, or commit i
 |---|---|
 | `200` | Success. **A failed job also returns `200`** with `status: "error"` — check the body. |
 | `202` | Job accepted (enqueued, not yet run). |
-| `400` | Malformed request, missing field, or body > 1 MiB. |
+| `400` | Malformed request, missing field, or body over the size cap. |
 | `401` | Missing or wrong key (indistinguishable, by design). |
 | `404` | Unknown job for this key. |
 | `429` | Rate limited. Back off. |
 
 Error bodies use one envelope:
 ```json
-{"error": "backend and prompt are required"}
+{"error": "prompt or messages is required"}
 ```
 
 ### Rate limits and timeouts
@@ -395,7 +395,7 @@ Error bodies use one envelope:
 | Bridge presence window | 40 seconds |
 | Enqueue rate | 1/sec sustained, burst 30, per key |
 | Failed-auth rate | 1/5s, burst 8, per IP |
-| Request body | 1 MiB |
+| Request body | 1 MiB by default; operator-tunable via `RELAYENT_MAX_BODY_BYTES` |
 
 ### Structured output
 
@@ -416,6 +416,26 @@ else:                 fallback(result["text"])
 `GET /v1/jobs/{id}?wait=1` holds the connection up to 90 seconds. A proxy with a shorter read
 timeout returns `502`/`504` mid-job, which looks like a bridge failure. Set
 `proxy_read_timeout` to at least `120s`. This is the most common integration error.
+
+### Known non-goals
+
+Things Relayent will not add, and why — so the limitations here are honest rather than
+"not yet implemented":
+
+- **Prompt caching.** This is an Anthropic-side feature keyed to the CLI's own session/
+  subscription; Relayent has no way to inject `cache_control` because the CLI, not
+  Relayent, owns that session. This is CLI-gated, not Relayent-gated — no wire change
+  can add it.
+- **Tool use / MCP / web search pass-through.** The underlying CLIs support these
+  headlessly, but enabling them re-opens the "CLI can edit files or run shell commands"
+  surface on the user's own machine, driven by a remote caller's request. `cursor`'s
+  `--mode ask` + `--trust` are a deliberate headless-safety choice made elsewhere in this
+  project; any tool-enablement design has to hold that same boundary, and hasn't been
+  built yet.
+- **Streaming (SSE).** The relay is enqueue + poll-for-complete-result; the bridge posts
+  one final result, with no incremental channel back. This is a structural property of
+  the outbound-only bridge (it dials out to the relay, never accepts inbound connections)
+  rather than a missing flag.
 
 ---
 
