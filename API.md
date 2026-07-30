@@ -172,6 +172,7 @@ Content-Type: application/json
 | `system` | string | no | System instruction. |
 | `json_schema` | object | no | JSON Schema. When set, the response is a parsed `json` object (best-effort). |
 | `effort` | string | no | Reasoning-depth hint: `low` \| `medium` \| `high` \| `xhigh` \| `max`. Per-backend support: `claude` (`--effort`) and `codex` (`-c model_reasoning_effort=...`) map it directly; `cursor` only applies it when `model` is also set (folded into the model string); `gemini` has no such control and ignores it. |
+| `attachments` | array | no | Files (typically images) as `[{"name": "photo.png", "data": "<base64>", "mime": "image/png"}]`. Support is genuinely per-backend: `codex` has a real local-file flag (`-i`/`--image`); `gemini` accepts an inline `@path` reference folded into the prompt; `claude`'s only file mechanism downloads a platform-managed `file_id`, not raw local bytes, so it cannot honor this; `cursor` has no attachment mechanism at all. A job for an unsupported backend with attachments set **fails with a clear error** rather than silently running without the image. |
 
 ```json
 {

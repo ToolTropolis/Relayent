@@ -594,6 +594,16 @@ components:
             codex (-c model_reasoning_effort=...) map it directly; cursor only applies
             it when model is also set (folded into the model string); gemini has no
             such control and ignores it.
+        attachments:
+          type: array
+          description: |
+            Files (typically images) as base64 bytes. Support is genuinely per-backend:
+            codex has a real local-file flag (-i/--image); gemini accepts an inline
+            @path reference folded into the prompt; claude's only file mechanism
+            downloads a platform-managed file_id, not raw local bytes; cursor has no
+            attachment mechanism at all. A job for an unsupported backend with
+            attachments set fails with a clear error rather than silently dropping them.
+          items: { $ref: "#/components/schemas/Attachment" }
         target_user:
           type: string
           description: |
@@ -606,6 +616,13 @@ components:
       properties:
         role: { type: string, enum: [user, assistant, system] }
         content: { type: string }
+    Attachment:
+      type: object
+      required: [name, data]
+      properties:
+        name: { type: string, description: "Filename, e.g. \"photo.png\" — extension matters to some CLIs" }
+        data: { type: string, description: Base64-encoded file bytes }
+        mime: { type: string, description: Optional MIME type hint }
     EnqueueResponse:
       type: object
       properties:
@@ -623,6 +640,9 @@ components:
         system: { type: string }
         json_schema: { type: object, additionalProperties: true }
         effort: { type: string }
+        attachments:
+          type: array
+          items: { $ref: "#/components/schemas/Attachment" }
     ResultRequest:
       type: object
       required: [ok]

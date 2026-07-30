@@ -572,14 +572,15 @@ func (s *server) enqueue(w http.ResponseWriter, r *http.Request, p *Principal) {
 
 	id := newID()
 	s.q.Enqueue(target, id, api.Job{
-		ID:         id,
-		Backend:    req.Backend,
-		Model:      req.Model,
-		Prompt:     req.Prompt,
-		System:     req.System,
-		JSONSchema: req.JSONSchema,
-		Messages:   req.Messages,
-		Effort:     req.Effort,
+		ID:          id,
+		Backend:     req.Backend,
+		Model:       req.Model,
+		Prompt:      req.Prompt,
+		System:      req.System,
+		JSONSchema:  req.JSONSchema,
+		Messages:    req.Messages,
+		Effort:      req.Effort,
+		Attachments: req.Attachments,
 	})
 	// Audit: IDs, backend, model, and the content's LENGTH — never the content
 	// itself. promptLen covers Prompt or, if Messages was used instead, the sum

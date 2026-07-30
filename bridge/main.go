@@ -15,6 +15,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -227,22 +229,29 @@ func (b *bridge) process(ctx context.Context, job api.Job) {
 		if len(job.Messages) > 0 {
 			prompt = flattenMessages(job.Messages)
 		}
-		jobCtx, cancel := context.WithTimeout(ctx, b.cfg.JobTimeout)
-		out, runErr := adapter.Run(jobCtx, adapters.Request{
-			Model:      job.Model,
-			Prompt:     prompt,
-			System:     job.System,
-			JSONSchema: job.JSONSchema,
-			Effort:     job.Effort,
-			WorkDir:    b.cfg.Workspace,
-		})
-		cancel()
-		if runErr != nil {
-			res = api.ResultRequest{OK: false, Error: runErr.Error()}
-		} else if out.IsJSON {
-			res = api.ResultRequest{OK: true, JSON: out.JSON}
+		paths, cleanup, attErr := writeAttachments(b.cfg.Workspace, job.ID, job.Attachments)
+		if attErr != nil {
+			res = api.ResultRequest{OK: false, Error: attErr.Error()}
 		} else {
-			res = api.ResultRequest{OK: true, Text: out.Text}
+			jobCtx, cancel := context.WithTimeout(ctx, b.cfg.JobTimeout)
+			out, runErr := adapter.Run(jobCtx, adapters.Request{
+				Model:           job.Model,
+				Prompt:          prompt,
+				System:          job.System,
+				JSONSchema:      job.JSONSchema,
+				Effort:          job.Effort,
+				AttachmentPaths: paths,
+				WorkDir:         b.cfg.Workspace,
+			})
+			cancel()
+			cleanup()
+			if runErr != nil {
+				res = api.ResultRequest{OK: false, Error: runErr.Error()}
+			} else if out.IsJSON {
+				res = api.ResultRequest{OK: true, JSON: out.JSON}
+			} else {
+				res = api.ResultRequest{OK: true, Text: out.Text}
+			}
 		}
 	}
 
@@ -255,6 +264,40 @@ func (b *bridge) process(ctx context.Context, job api.Job) {
 	} else {
 		log.Printf("[relayent-bridge] job %s error: %s", job.ID, res.Error)
 	}
+}
+
+// writeAttachments decodes each attachment's base64 data and writes it to a
+// uniquely-named file inside workspace, returning the absolute paths (in the
+// same order as attachments) and a cleanup func that removes them all. The
+// caller-supplied Name is never used as-is for the path — only its extension
+// is kept, appended to a generated name — so a malicious or malformed Name
+// (e.g. containing "../") cannot escape the workspace or collide with another
+// job's files.
+func writeAttachments(workspace, jobID string, attachments []api.Attachment) ([]string, func(), error) {
+	if len(attachments) == 0 {
+		return nil, func() {}, nil
+	}
+	var paths []string
+	cleanup := func() {
+		for _, p := range paths {
+			_ = os.Remove(p)
+		}
+	}
+	for i, a := range attachments {
+		data, err := base64.StdEncoding.DecodeString(a.Data)
+		if err != nil {
+			cleanup()
+			return nil, func() {}, fmt.Errorf("attachment %d (%s): invalid base64: %w", i, a.Name, err)
+		}
+		ext := filepath.Ext(a.Name)
+		path := filepath.Join(workspace, fmt.Sprintf("attachment-%s-%d%s", jobID, i, ext))
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			cleanup()
+			return nil, func() {}, fmt.Errorf("attachment %d (%s): write failed: %w", i, a.Name, err)
+		}
+		paths = append(paths, path)
+	}
+	return paths, cleanup, nil
 }
 
 // flattenMessages turns a conversation history into a single prompt string.

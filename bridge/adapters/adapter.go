@@ -26,6 +26,14 @@ type Request struct {
 	// mechanism for it simply ignores the field rather than erroring.
 	Effort string
 
+	// AttachmentPaths are absolute paths to files already written into WorkDir
+	// (the bridge decodes each Attachment's base64 to a temp file before
+	// calling Run, so no adapter needs its own decode logic). Support is
+	// genuinely per-backend: an adapter with no real attachment mechanism
+	// returns an error rather than silently dropping them, since a missing
+	// image is not equivalent to no image.
+	AttachmentPaths []string
+
 	// WorkDir is the directory the CLI process runs in. It must always be set to
 	// the bridge's dedicated workspace and never left empty: a child process
 	// otherwise inherits the bridge's own working directory, and on macOS the OS

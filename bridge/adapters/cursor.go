@@ -80,6 +80,12 @@ func (a *CursorAdapter) Run(ctx context.Context, req Request) (Result, error) {
 // run performs one CLI invocation. retry=true marks a single JSON-repair retry so
 // it doesn't recurse further.
 func (a *CursorAdapter) run(ctx context.Context, req Request, retry bool) (Result, error) {
+	// cursor-agent has no attachment/image mechanism at all (verified via
+	// --help). Fail clearly rather than silently running without the image the
+	// caller asked for — a missing image is not equivalent to no image.
+	if len(req.AttachmentPaths) > 0 {
+		return Result{}, fmt.Errorf("cursor adapter does not support attachments (no attach mechanism in the CLI)")
+	}
 	// --mode ask keeps this read-only (no edits/shell); --trust is required for
 	// non-interactive use in an untrusted workspace.
 	args := []string{"-p", "--output-format", "json", "--mode", "ask", "--trust"}

@@ -78,6 +78,11 @@ func (a *CodexAdapter) run(ctx context.Context, req Request, retry bool) (Result
 	if req.Effort != "" {
 		args = append(args, "-c", "model_reasoning_effort="+req.Effort)
 	}
+	// codex has a real local-file attach flag, verified via --help ("-i,
+	// --image <FILE>... Optional image(s) to attach to the initial prompt").
+	for _, p := range req.AttachmentPaths {
+		args = append(args, "-i", p)
+	}
 	args = append(args, "-") // read prompt from stdin
 
 	// When a schema/JSON is requested, steer Codex to emit JSON only. Codex has no

@@ -45,6 +45,16 @@ type EnqueueRequest struct {
 	// gemini has no such control at all, so it is silently ignored there.
 	Effort string `json:"effort,omitempty"`
 
+	// Attachments carries images (or other files) as base64 bytes. Support is
+	// genuinely per-backend, verified against each CLI (not assumed): codex has
+	// a real local-file flag (-i/--image); gemini accepts an inline @filepath
+	// reference in the prompt text; claude's only --file mechanism downloads a
+	// platform-managed file_id, not raw local bytes, so it cannot honor this;
+	// cursor-agent has no attachment mechanism at all. A job for an unsupported
+	// backend with attachments set fails clearly rather than silently dropping
+	// them — attachments are not decorative the way effort is.
+	Attachments []Attachment `json:"attachments,omitempty"`
+
 	// TargetUser routes the job to a specific user's bridge/subscription. Required
 	// for an app credential serving many users; ignored for a bridge or legacy
 	// principal, which already carry their own identity. It is the OIDC subject of
@@ -58,6 +68,15 @@ type Message struct {
 	Content string `json:"content"`
 }
 
+// Attachment is one file (typically an image) carried alongside a job, for
+// EnqueueRequest.Attachments. Data is base64-encoded; the bridge decodes it to
+// a temp file in its sandboxed workspace before invoking the CLI.
+type Attachment struct {
+	Name string `json:"name"`           // filename, e.g. "photo.png" — extension matters to some CLIs
+	Data string `json:"data"`           // base64-encoded file bytes
+	Mime string `json:"mime,omitempty"` // optional MIME type hint
+}
+
 // EnqueueResponse is returned by POST /v1/jobs.
 type EnqueueResponse struct {
 	JobID string `json:"job_id"`
@@ -66,14 +85,15 @@ type EnqueueResponse struct {
 // Job is what the bridge claims from GET /v1/jobs/next. It is the EnqueueRequest
 // plus the server-assigned id.
 type Job struct {
-	ID         string    `json:"id"`
-	Backend    string    `json:"backend"`
-	Model      string    `json:"model,omitempty"`
-	Prompt     string    `json:"prompt"`
-	System     string    `json:"system,omitempty"`
-	JSONSchema any       `json:"json_schema,omitempty"`
-	Messages   []Message `json:"messages,omitempty"`
-	Effort     string    `json:"effort,omitempty"`
+	ID          string       `json:"id"`
+	Backend     string       `json:"backend"`
+	Model       string       `json:"model,omitempty"`
+	Prompt      string       `json:"prompt"`
+	System      string       `json:"system,omitempty"`
+	JSONSchema  any          `json:"json_schema,omitempty"`
+	Messages    []Message    `json:"messages,omitempty"`
+	Effort      string       `json:"effort,omitempty"`
+	Attachments []Attachment `json:"attachments,omitempty"`
 }
 
 // ResultRequest is the body of POST /v1/jobs/{id}/result — the bridge reporting

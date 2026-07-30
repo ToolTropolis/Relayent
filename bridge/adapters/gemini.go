@@ -79,6 +79,14 @@ func (a *GeminiAdapter) run(ctx context.Context, req Request, retry bool) (Resul
 	if req.System != "" {
 		prompt = req.System + "\n\n" + prompt
 	}
+	// gemini-cli has no attachment flag, but its @path inline syntax (verified
+	// via web search of the CLI's own docs) works in -p headless mode: an
+	// @file.png reference in the prompt text is expanded to file content by
+	// the CLI itself. AttachmentPaths are already absolute, workspace-local
+	// paths, so no traversal risk in referencing them this way.
+	for _, p := range req.AttachmentPaths {
+		prompt += " @" + p
+	}
 	if req.JSONSchema != nil {
 		schemaJSON, err := json.Marshal(req.JSONSchema)
 		if err != nil {

@@ -78,6 +78,13 @@ func (a *ClaudeAdapter) Run(ctx context.Context, req Request) (Result, error) {
 // run performs one CLI invocation. retry=true marks a single JSON-repair retry so
 // it doesn't recurse further.
 func (a *ClaudeAdapter) run(ctx context.Context, req Request, retry bool) (Result, error) {
+	// claude's only --file mechanism downloads a platform-managed file_id, not
+	// raw local bytes (verified via --help), so it cannot honor an attachment.
+	// Fail clearly rather than silently running without the image the caller
+	// asked for — a missing image is not equivalent to no image.
+	if len(req.AttachmentPaths) > 0 {
+		return Result{}, fmt.Errorf("claude adapter does not support attachments (no local-file mechanism in headless mode)")
+	}
 	// Headless, single-shot JSON envelope. --json-schema constrains the model's
 	// answer to the requested structure when a schema was provided. Note: the flag
 	// takes the schema as an INLINE JSON string argument (not a file path).
