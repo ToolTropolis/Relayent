@@ -13,6 +13,7 @@ package adapters
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -63,6 +64,12 @@ func (a *CodexAdapter) LoggedIn(ctx context.Context) (bool, bool) {
 }
 
 func (a *CodexAdapter) Run(ctx context.Context, req Request) (Result, error) {
+	return a.run(ctx, req, false)
+}
+
+// run performs one CLI invocation. retry=true marks a single JSON-repair retry so
+// it doesn't recurse further.
+func (a *CodexAdapter) run(ctx context.Context, req Request, retry bool) (Result, error) {
 	// `codex exec -` reads the prompt from stdin and runs non-interactively.
 	args := []string{"exec"}
 	if req.Model != "" {
@@ -71,13 +78,20 @@ func (a *CodexAdapter) Run(ctx context.Context, req Request) (Result, error) {
 	args = append(args, "-") // read prompt from stdin
 
 	// When a schema/JSON is requested, steer Codex to emit JSON only. Codex has no
-	// dedicated schema flag, so we instruct it in the prompt and parse best-effort.
+	// dedicated schema flag, so we echo the actual schema in the prompt and parse
+	// best-effort, matching the claude/cursor adapters.
 	prompt := req.Prompt
 	if req.System != "" {
 		prompt = req.System + "\n\n" + prompt
 	}
 	if req.JSONSchema != nil {
-		prompt += "\n\nReturn ONLY a valid JSON object, no markdown fences, no commentary."
+		schemaJSON, err := json.Marshal(req.JSONSchema)
+		if err != nil {
+			return Result{}, fmt.Errorf("marshal json schema: %w", err)
+		}
+		prompt += "\n\nYou MUST reply with ONLY a single valid JSON object that conforms" +
+			" to this JSON Schema. No prose, no explanation, no markdown code fences —" +
+			" output raw JSON and nothing else.\nJSON Schema:\n" + string(schemaJSON)
 	}
 
 	cmd := exec.CommandContext(ctx, a.Bin, args...)
@@ -93,7 +107,20 @@ func (a *CodexAdapter) Run(ctx context.Context, req Request) (Result, error) {
 		return Result{}, fmt.Errorf("codex cli: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 
-	return finalize(stdout.String(), req.JSONSchema != nil), nil
+	text := stdout.String()
+	res := finalize(text, req.JSONSchema != nil)
+	// If JSON was required but the model replied with prose, retry once with a
+	// curt, forceful re-prompt before giving up and returning the text.
+	if req.JSONSchema != nil && !res.IsJSON && !retry {
+		schemaJSON, _ := json.Marshal(req.JSONSchema)
+		retryReq := req
+		retryReq.System = ""
+		retryReq.Prompt = "Convert the following into a single raw JSON object matching this" +
+			" schema and output ONLY that JSON (no prose, no fences).\nSchema:\n" +
+			string(schemaJSON) + "\n\nContent:\n" + text
+		return a.run(ctx, retryReq, true)
+	}
+	return res, nil
 }
 
 // Models reports nothing: `codex --model` documents no aliases and the CLI has

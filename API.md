@@ -396,8 +396,12 @@ Error bodies use one envelope:
 
 ### Structured output
 
-`json_schema` requests a parsed object instead of prose. It is **best-effort**: the adapters
-instruct JSON in-prompt and repair once, but a model may still return prose. Handle both:
+`json_schema` requests a parsed object instead of prose. It is **best-effort**: only `claude`
+has a native schema flag (`--json-schema`, passed straight to the CLI); `codex`, `cursor`, and
+`gemini` have no such flag, so those adapters echo the schema in-prompt and retry once with a
+curt re-prompt if the model replies with prose instead of JSON. Either way, a model can still
+return prose after the retry — a true `strict:true` guarantee is CLI-dependent and can't be
+faked at the Relayent layer. Handle both:
 
 ```python
 if "json" in result: use(result["json"])

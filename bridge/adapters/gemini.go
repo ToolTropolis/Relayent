@@ -61,15 +61,27 @@ func (a *GeminiAdapter) LoggedIn(ctx context.Context) (bool, bool) {
 }
 
 func (a *GeminiAdapter) Run(ctx context.Context, req Request) (Result, error) {
+	return a.run(ctx, req, false)
+}
+
+// run performs one CLI invocation. retry=true marks a single JSON-repair retry so
+// it doesn't recurse further.
+func (a *GeminiAdapter) run(ctx context.Context, req Request, retry bool) (Result, error) {
 	// Compose the prompt: prepend any system instruction, and for a schema request
-	// steer JSON-only (the CLI has no schema flag; we instruct in-prompt and parse
-	// best-effort, matching the codex/cursor adapters).
+	// echo the actual schema in the prompt (the CLI has no schema flag; we instruct
+	// in-prompt and parse best-effort, matching the claude/codex/cursor adapters).
 	prompt := req.Prompt
 	if req.System != "" {
 		prompt = req.System + "\n\n" + prompt
 	}
 	if req.JSONSchema != nil {
-		prompt += "\n\nReturn ONLY a valid JSON object, no markdown fences, no commentary."
+		schemaJSON, err := json.Marshal(req.JSONSchema)
+		if err != nil {
+			return Result{}, fmt.Errorf("marshal json schema: %w", err)
+		}
+		prompt += "\n\nYou MUST reply with ONLY a single valid JSON object that conforms" +
+			" to this JSON Schema. No prose, no explanation, no markdown code fences —" +
+			" output raw JSON and nothing else.\nJSON Schema:\n" + string(schemaJSON)
 	}
 
 	// The prompt goes on stdin, not as a -p arg — the CLI's own help documents
@@ -99,7 +111,19 @@ func (a *GeminiAdapter) Run(ctx context.Context, req Request) (Result, error) {
 	// the model's text; if the envelope isn't what we expect, fall back to the raw
 	// output so a CLI change degrades to plain text rather than an error.
 	text := unwrapGeminiJSON(stdout.String())
-	return finalize(text, req.JSONSchema != nil), nil
+	res := finalize(text, req.JSONSchema != nil)
+	// If JSON was required but the model replied with prose, retry once with a
+	// curt, forceful re-prompt before giving up and returning the text.
+	if req.JSONSchema != nil && !res.IsJSON && !retry {
+		schemaJSON, _ := json.Marshal(req.JSONSchema)
+		retryReq := req
+		retryReq.System = ""
+		retryReq.Prompt = "Convert the following into a single raw JSON object matching this" +
+			" schema and output ONLY that JSON (no prose, no fences).\nSchema:\n" +
+			string(schemaJSON) + "\n\nContent:\n" + text
+		return a.run(ctx, retryReq, true)
+	}
+	return res, nil
 }
 
 // unwrapGeminiJSON extracts the "response" field from the CLI's JSON envelope,
