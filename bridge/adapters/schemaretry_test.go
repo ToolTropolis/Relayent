@@ -1,3 +1,16 @@
+// Primary author: Navjyot Nishant
+// Created on: 2026-07-29
+// Last updated: 2026-07-29
+// Description: Proves the schema-echo + one-shot repair-retry path for codex and
+//
+//	gemini — neither CLI has a native structured-output flag, so both rely on
+//	echoing the actual JSON Schema in the prompt and retrying once with a
+//	curt re-prompt if the first reply wasn't valid JSON, matching the
+//	claude/cursor pattern this brings them up to.
+//
+// AI usage: Built with assistance from AI tools for implementation acceleration,
+//
+//	review, and refactoring.
 package adapters
 
 import (

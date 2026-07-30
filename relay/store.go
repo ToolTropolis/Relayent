@@ -606,15 +606,15 @@ func (s *Store) RedeemEnrollToken(tokenHash string) (userSub string, err error) 
 type AuditEvent struct {
 	Seq       uint64    `json:"seq"`
 	TS        time.Time `json:"ts"`
-	ActorSub  string    `json:"actor_sub"`  // who acted (user/app/admin id)
-	Event     string    `json:"event"`      // enqueue | claim | result | cancel | enroll | admin_action
-	JobID     string    `json:"job_id"`     // opaque id, never content
-	TargetSub string    `json:"target_sub"` // whose namespace it affected
-	Backend   string    `json:"backend"`    // e.g. "cursor"
-	Model     string    `json:"model"`      // e.g. "auto"
-	Status    string    `json:"status"`     // done | error | ""
-	PromptLen int       `json:"prompt_len"` // BYTE COUNT only — never the bytes
-	ResultLen int       `json:"result_len"` // BYTE COUNT only — never the bytes
+	ActorSub  string    `json:"actor_sub"`           // who acted (user/app/admin id)
+	Event     string    `json:"event"`               // enqueue | claim | result | cancel | enroll | admin_action
+	JobID     string    `json:"job_id"`              // opaque id, never content
+	TargetSub string    `json:"target_sub"`          // whose namespace it affected
+	Backend   string    `json:"backend"`             // e.g. "cursor"
+	Model     string    `json:"model"`               // e.g. "auto"
+	Status    string    `json:"status"`              // done | error | ""
+	PromptLen int       `json:"prompt_len"`          // BYTE COUNT only — never the bytes
+	ResultLen int       `json:"result_len"`          // BYTE COUNT only — never the bytes
 	BridgeID  string    `json:"bridge_id,omitempty"` // which bridge served this, when known
 	Host      string    `json:"host,omitempty"`      // best-effort: the actor's last-reported hostname
 	Version   string    `json:"version,omitempty"`   // best-effort: the actor's last-reported bridge version

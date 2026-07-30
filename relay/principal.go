@@ -30,15 +30,15 @@ const (
 // console roles. The write scopes below gate one area each; a role's scope
 // set is computed by scopesForRole.
 const (
-	ScopeEnqueue   = "enqueue"    // POST /v1/jobs
-	ScopeClaim     = "claim"      // GET /v1/jobs/next, POST result, report capabilities
-	ScopeAdmin     = "admin"      // full admin — every /v1/admin/* endpoint (bootstrap token, RoleAdmin)
-	ScopeAdminView = "admin-view" // read-only /v1/admin/* (all three console roles)
-	ScopeUsersEdit = "users-edit" // manage user role/disable/delete, mint enroll tokens (RoleAdmin only)
-	ScopeCredsEdit = "creds-edit" // create/revoke/delete app credentials (RoleAdmin, RoleOperator)
-	ScopeBridgesEdit = "bridges-edit" // revoke bridges (RoleAdmin, RoleOperator)
+	ScopeEnqueue      = "enqueue"       // POST /v1/jobs
+	ScopeClaim        = "claim"         // GET /v1/jobs/next, POST result, report capabilities
+	ScopeAdmin        = "admin"         // full admin — every /v1/admin/* endpoint (bootstrap token, RoleAdmin)
+	ScopeAdminView    = "admin-view"    // read-only /v1/admin/* (all three console roles)
+	ScopeUsersEdit    = "users-edit"    // manage user role/disable/delete, mint enroll tokens (RoleAdmin only)
+	ScopeCredsEdit    = "creds-edit"    // create/revoke/delete app credentials (RoleAdmin, RoleOperator)
+	ScopeBridgesEdit  = "bridges-edit"  // revoke bridges (RoleAdmin, RoleOperator)
 	ScopeBackendsEdit = "backends-edit" // toggle backend enabled state (RoleAdmin, RoleOperator)
-	ScopeDemoStats = "demo-stats" // POST /v1/demo/hit — write a content-free visitor hit, nothing else
+	ScopeDemoStats    = "demo-stats"    // POST /v1/demo/hit — write a content-free visitor hit, nothing else
 )
 
 // scopesForRole computes a console principal's scopes from their role. Called

@@ -1,3 +1,15 @@
+// Primary author: Navjyot Nishant
+// Created on: 2026-07-29
+// Last updated: 2026-07-29
+// Description: Proves each adapter's actual per-backend attachment behavior —
+//
+//	codex passes -i <path> per file, gemini embeds @<path> in the prompt, and
+//	claude/cursor (which have no real local-attach mechanism) error out rather
+//	than silently running without the image the caller asked for.
+//
+// AI usage: Built with assistance from AI tools for implementation acceleration,
+//
+//	review, and refactoring.
 package adapters
 
 import (

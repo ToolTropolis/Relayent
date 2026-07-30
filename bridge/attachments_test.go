@@ -1,3 +1,15 @@
+// Primary author: Navjyot Nishant
+// Created on: 2026-07-29
+// Last updated: 2026-07-29
+// Description: Proves writeAttachments decodes base64 correctly, cleans up its
+//
+//	temp files, rejects invalid base64, and — the security-load-bearing case —
+//	that a malicious or malformed attachment Name (e.g. "../../../etc/passwd")
+//	can never escape the bridge's workspace directory.
+//
+// AI usage: Built with assistance from AI tools for implementation acceleration,
+//
+//	review, and refactoring.
 package main
 
 import (

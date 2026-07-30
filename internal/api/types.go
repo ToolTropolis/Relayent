@@ -64,7 +64,7 @@ type EnqueueRequest struct {
 
 // Message is one turn in a conversation, for EnqueueRequest.Messages.
 type Message struct {
-	Role    string `json:"role"`    // "user" | "assistant" | "system"
+	Role    string `json:"role"` // "user" | "assistant" | "system"
 	Content string `json:"content"`
 }
 

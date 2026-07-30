@@ -1,3 +1,14 @@
+// Primary author: Navjyot Nishant
+// Created on: 2026-07-29
+// Last updated: 2026-07-29
+// Description: Proves cursor and gemini pass large prompts via stdin, not argv —
+//
+//	an argv-based prompt hits the OS ARG_MAX ceiling regardless of the relay's
+//	own body-size cap, so this is the property that actually protects big jobs.
+//
+// AI usage: Built with assistance from AI tools for implementation acceleration,
+//
+//	review, and refactoring.
 package adapters
 
 import (

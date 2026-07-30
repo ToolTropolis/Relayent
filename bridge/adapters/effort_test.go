@@ -1,3 +1,15 @@
+// Primary author: Navjyot Nishant
+// Created on: 2026-07-29
+// Last updated: 2026-07-29
+// Description: Proves each adapter's actual per-backend effort/reasoning-depth
+//
+//	mapping — claude's --effort flag, codex's -c model_reasoning_effort=,
+//	cursor's model-string bracket syntax (only when Model is also set), and
+//	gemini's silent no-op since the CLI has no such control at all.
+//
+// AI usage: Built with assistance from AI tools for implementation acceleration,
+//
+//	review, and refactoring.
 package adapters
 
 import (

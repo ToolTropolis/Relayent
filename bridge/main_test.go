@@ -1,3 +1,14 @@
+// Primary author: Navjyot Nishant
+// Created on: 2026-07-29
+// Last updated: 2026-07-29
+// Description: Proves flattenMessages turns a conversation history into the
+//
+//	single prompt string every adapter already knows how to consume — none of
+//	the four CLI backends accept a structured message array in headless mode.
+//
+// AI usage: Built with assistance from AI tools for implementation acceleration,
+//
+//	review, and refactoring.
 package main
 
 import (
